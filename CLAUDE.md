@@ -9,7 +9,7 @@
 - **纯记录工具,不做任何建议/计划/教练功能**
 - 自用 + 少量朋友使用,无并发/商业化考量
 - 后端:Python (FastAPI + Tortoise ORM + PostgreSQL)
-- 前端:iOS 原生 (Swift + SwiftUI),独立目录,后期开发
+- 前端:iOS 原生 (Swift + SwiftUI),独立目录,后期开发;安卓是远期考虑(iOS 版本完成后再评估),当前不设计、不预留
 - 这是一个新项目,按下方"当前阶段"推进
 
 ## 核心架构决策(已定稿,不要更改)
@@ -31,14 +31,21 @@
 5. **运动消耗公式只用体重**:kcal = MET × 体重(kg) × 时长(h)。不引入身高/体脂/BMR/TDEE
 6. **不做注册登录/auth**,多用户仅为简单的用户选择(users 表)
 7. 不接入 CoCoWork 或任何外部 agent 平台;AI 逻辑收敛在 `app/ai/` 模块内,一次 LLM 调用解决
+8. **数据库迁移用 Tortoise 内置迁移系统**(`tortoise init / makemigrations / migrate`),**杜绝 aerich**;不依赖 generate_schemas 自动建表
 
 ## 目录结构
 
 ```
 backend/
+  pyproject.toml       # 后端依赖管理(uv),自包含,不放在仓库根目录
+  .env.example
   app/
-    main.py            # FastAPI 入口
+    main.py            # FastAPI 入口:lifespan + 挂路由,不写业务逻辑
+    config.py          # pydantic-settings 读 .env(扁平单文件,不建 core/ 包)
+    db.py              # TORTOISE_ORM 配置
     models.py          # Tortoise 模型:users, records
+    api.py             # 路由(骨架期仅 /health,业务端点按契约实现,不写占位假端点)
+    migrations/        # Tortoise 内置迁移文件(CLI 生成,不手写)
     ai/
       schema.py        # Pydantic 输出 schema(ExerciseRecord/FoodRecord union)
       parser.py        # LLM 调用 + structured output
@@ -48,8 +55,17 @@ backend/
       met.json
   scripts/             # 一次性脚本(如 food.json 预处理)
   tests/
+docs/
+  product.md           # 产品定义:做什么/不做什么/典型输入输出
+  context.md           # 活文档:当前进度、最近改动、待决策
 ios/                   # SwiftUI 前端(后期建立,独立于 backend)
 ```
+
+### 后端 Import 约定
+
+- `pyproject.toml` 位于 `backend/` 目录下,不在仓库根目录(polyglot monorepo:backend / ios / 远期 android 各自独立管理依赖)
+- 所有后端内部 import 使用 `from app.xxx` 形式,例如 `from app.models import User`
+- 运行后端命令时在 `backend/` 目录下执行
 
 ## 核心接口契约
 
@@ -75,25 +91,40 @@ PATCH /records/{id}    # 解析错误时允许手动修正数字
 cd backend
 uv sync                          # 安装依赖
 uv run uvicorn app.main:app --reload   # 启动开发服务
+uv run tortoise makemigrations --name <描述>   # 模型变更后生成迁移
+uv run tortoise migrate          # 应用迁移
 uv run pytest                    # 测试
 ruff check && ruff format        # lint
 ```
 
-PostgreSQL 本地通过 docker compose 启动(backend/docker-compose.yml)。
+数据库为**云端 PostgreSQL**(不跑本地容器):连接信息以 `PG_HOST / PG_PORT / PG_USER / PG_PASSWORD / PG_DATABASE` 分字段填在 `backend/.env`,由用户维护;涉及外部服务的连接配置一律交给用户处理。
 
 ## 环境与密钥
 
 - LLM API key、数据库连接串放 `.env`,**绝不硬编码、绝不提交**
 - `data/*.json` 是项目必需品,**必须提交进仓库**(合计 <1MB)
 
+## Git 提交规范
+
+```
+<type>: <英文短标题,不超过 70 字符>
+
+- 中文要点 1
+- 中文要点 2
+
+Co-Authored-By: Claude <当次实际模型名> <noreply@anthropic.com>
+```
+
+- `type`:`feat` / `fix` / `refactor` / `chore` / `docs`
+- 标题行英文、简洁;body 写中文要点即可,不需要额外英文摘要
+- 一个 commit 聚焦一件事
+- 署名写当次实际执行提交的模型(如 `Claude Fable 5`),不硬编码某个型号——模型会更换
+
 ## 当前阶段
 
-- [ ] M0 数据准备:生成 food.json / met.json
-- [ ] M1 后端核心链路:/records/parse 跑通,curl 可验证
-- [ ] M2 真实使用打磨:按实际解析错例优化映射
-- [ ] M3 iOS 前端(SwiftUI,不设 deadline)
+任务清单与实时进度在 `docs/context.md`(活文档,本文件不记进度)。不分里程碑阶段,按顺序清单推进。
 
-以 M1 为最高优先级;M1 完成前不做任何前端和部署工作。
+固定优先级:后端核心链路(/records/parse)最高;它跑通前不做任何前端和部署工作。
 
 ## 已知的坑
 
@@ -105,8 +136,11 @@ PostgreSQL 本地通过 docker compose 启动(backend/docker-compose.yml)。
 ## 工作规则
 
 1. 先读后写:动手前先读相关现有文件
-2. 用户不深读代码:每次改动后用一两句话说明改了什么、如何验证(给出可直接复制的 curl/命令)
-3. 保持简单直接,禁止过度设计;不引入本文档未列出的新依赖/新组件,除非先说明理由并征得同意
-4. 改动后必须自行运行验证,再声明完成
-5. 回复使用中文
-6. 用户指令始终优先于本文档
+2. 契约先行:新增模块/接口前,先扩写「核心接口契约」/「数据库」等契约类章节,获得批准后才写代码——用户审的是契约,不审代码细节
+3. 用户不深读代码:每次改动后用一两句话说明改了什么、如何验证
+4. 自检必须给真实证据:改动后必须实际执行验证命令(curl/pytest),把真实终端输出贴出来,不能只说"应该没问题"就声明完成
+5. 核心业务逻辑(公式计算、解析优先级判断等有确定输入输出的部分)必须配 pytest 单测,测试函数名用中文描述行为,作为可读的规格替代代码审查
+6. 文档分工:本文件只放稳定内容(规则/已定稿决策/契约);进度、最近改动、待决策写 `docs/context.md`,每次有意义的改动后更新它并保持精简(旧内容压缩进历史摘要);产品定义在 `docs/product.md`。不参照本仓库之外的跨项目文档(如 Amoy 根目录的 CODING-STYLE.md,那是 CoCoWork 专属约定)
+7. 保持简单直接,禁止过度设计;不引入本文档未列出的新依赖/新组件,除非先说明理由并征得同意
+8. 回复使用中文
+9. 用户指令始终优先于本文档
