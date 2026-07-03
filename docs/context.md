@@ -8,6 +8,7 @@
 - [x] 后端骨架(已验收:云端 PG 迁移建表成功,pytest /health 通过)
 - [x] 数据表:food.json(1575 条)/ met.json(50 条起始集)已生成并校验
 - [x] 七张表落库:models 重构 + 迁移 0002 已应用云端;SQLite 单测夹具就绪(3 测试全过)
+- [x] lookup.py:内存表加载 + 全部热量公式(克重折算 / Mifflin-St Jeor / 修正 MET / 次数换时长);歧义别名(西红柿→番茄|奶柿子等 52 例)剔出精确映射交 LLM 裁决;14 测试全过
 - [ ] 洗数据链路(/chat intent=record→AI 洗→raw)+ 修正/删除接口 ← 进行中
 - [ ] 聚合链路(raw→AI 聚合→new):meals/sessions + ai_memories
 - [ ] 展示接口:/days、/weights、用户管理
