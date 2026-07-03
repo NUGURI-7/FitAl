@@ -7,7 +7,8 @@
 
 - [x] 后端骨架(已验收:云端 PG 迁移建表成功,pytest /health 通过)
 - [x] 数据表:food.json(1575 条)/ met.json(50 条起始集)已生成并校验
-- [ ] 洗数据链路(/chat intent=record→AI 洗→raw)+ 修正/删除接口
+- [x] 七张表落库:models 重构 + 迁移 0002 已应用云端;SQLite 单测夹具就绪(3 测试全过)
+- [ ] 洗数据链路(/chat intent=record→AI 洗→raw)+ 修正/删除接口 ← 进行中
 - [ ] 聚合链路(raw→AI 聚合→new):meals/sessions + ai_memories
 - [ ] 展示接口:/days、/weights、用户管理
 - [ ] 真实使用打磨:按实际解析错例优化映射与记忆
