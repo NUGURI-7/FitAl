@@ -6,13 +6,14 @@ harness(微循环):schema 不合格由 PydanticAI 带错自动重试;输出校�
 所有数值计算在 build_records(纯函数,离线可测),LLM 一个数都不算。
 """
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.deepseek import DeepSeekProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from app.ai import lookup
@@ -302,10 +303,21 @@ MET 表({len(lookup.met_items())}条):
 
 
 def _model() -> OpenAIChatModel:
+    """任意 OpenAI 兼容端点;key 可空(本地部署无鉴权,占位符满足 SDK 非空要求)。"""
     return OpenAIChatModel(
-        "deepseek-v4-flash",
-        provider=DeepSeekProvider(api_key=settings.DEEPSEEK_API_KEY),
+        settings.LLM_MODEL,
+        provider=OpenAIProvider(
+            base_url=settings.LLM_BASE_URL,
+            api_key=settings.LLM_API_KEY or "EMPTY",
+        ),
     )
+
+
+def _model_settings() -> ModelSettings:
+    ms = ModelSettings(temperature=0.0)
+    if settings.LLM_EXTRA_BODY:  # 端点私有参数由 .env 控制,换端点不改代码
+        ms["extra_body"] = json.loads(settings.LLM_EXTRA_BODY)
+    return ms
 
 
 @lru_cache(maxsize=1)
@@ -316,7 +328,7 @@ def parse_agent() -> Agent:
         deps_type=frozenset,
         instructions=_instructions(),
         retries=2,
-        model_settings=ModelSettings(temperature=0.0),
+        model_settings=_model_settings(),
     )
 
     @agent.output_validator
@@ -336,7 +348,7 @@ def remap_agent() -> Agent:
         output_type=NameRemap,
         instructions="为每个未命中的食物名从给出的候选中挑最贴切的标准名;没有合适的填 null。只能从候选里选,不得自造。",
         retries=2,
-        model_settings=ModelSettings(temperature=0.0),
+        model_settings=_model_settings(),
     )
 
 

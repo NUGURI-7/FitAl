@@ -14,8 +14,11 @@ class Settings(BaseSettings):
     PG_PASSWORD: str = ""
     PG_DATABASE: str = "fital"
 
-    # ==================== LLM ====================
-    DEEPSEEK_API_KEY: str = ""
+    # ==================== LLM(任意 OpenAI 兼容端点)====================
+    LLM_BASE_URL: str = "https://api.deepseek.com"
+    LLM_MODEL: str = "deepseek-v4-flash"
+    LLM_API_KEY: str = ""  # 本地部署无鉴权时留空
+    LLM_EXTRA_BODY: str = ""  # 端点私有参数(JSON 字符串),如 DeepSeek 关思考模式
 
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE,
