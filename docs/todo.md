@@ -1,0 +1,34 @@
+# FitAl 任务看板
+
+> 唯一的待办/已办清单,每次有进展就更新。当前状态细节与待决策见 `context.md`。
+
+## ✅ 已完成
+
+- [x] 三文档体系 + 全部设计定稿:架构主流程、七张表、chat 契约 v3、读写不对称、LLM 选型(2026-07-02)
+- [x] 后端骨架:FastAPI + Tortoise 连云端 PG,`/health` 可用,内置迁移体系跑通
+- [x] 静态数据:food.json 1575 条(清洗 + 三道校验,排除 82 条坏数据)、met.json 50 条起始集
+- [x] 七张表落库:迁移 0002 已应用云端;单测切内存 SQLite
+- [x] lookup.py:查表两级匹配 + 全部热量公式,14 个单测全过
+
+## 🔨 进行中
+
+- [ ] 数据补全:双版本合并,找回视觉版丢失的条目(馒头/花卷/面包等)
+- [ ] 解析器:schema.py + parser.py(PydanticAI + deepseek-v4-flash)+ 离线测试
+
+## 📋 待办(按顺序)
+
+- [ ] /chat 端点(intent=record):解析入库 raw + 力量组间隔消耗
+- [ ] 聚合链路 aggregate.py:规则归组 + AI 起名 → meals/sessions
+- [ ] 修正/删除接口(PATCH/DELETE,触发聚合重算)
+- [ ] 展示接口:/days、/weights、/users
+- [ ] ai_memories 记忆:纠正即时学 + 每日首次请求巩固
+- [ ] 真实使用打磨(错例驱动)
+- [ ] 读代理(自然语言查数,周报是查询的一种)→ 澄清式反问
+- [ ] 响应式 Web 前端(移动端优先;动工前先对齐功能形态)
+- [ ] iOS 原生前端(SwiftUI,不设 deadline)
+
+## ⏳ 等用户
+
+- [ ] `backend/.env` 填 `DEEPSEEK_API_KEY`(platform.deepseek.com)
+- [ ] 确认:met.json 补 5 个杠铃动作(卧推/杠铃深蹲/硬拉/推举/杠铃划船,MET 6.0,4秒/次)
+- [ ] 确认:组间隔公式精确化(距上组 ≤20min → 时长=实际间隔;首组或 >20min → 时长=动作时间)

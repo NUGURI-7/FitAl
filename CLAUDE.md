@@ -62,7 +62,8 @@ backend/
   tests/
 docs/
   product.md           # 产品定义:做什么/不做什么/典型输入输出
-  context.md           # 活文档:当前进度、最近改动、待决策
+  todo.md              # 任务看板:已办/进行中/待办/等用户(唯一任务清单)
+  context.md           # 活文档:当前状态、最近改动、待决策
 web/                   # 响应式 Web 前端,移动端优先(后端跑通后建立)
 ios/                   # SwiftUI 前端(Web 之后,独立于 backend)
 ```
@@ -165,7 +166,7 @@ Co-Authored-By: Claude <当次实际模型名> <noreply@anthropic.com>
 
 ## 当前阶段
 
-任务清单与实时进度在 `docs/context.md`(活文档,本文件不记进度)。不分里程碑阶段,按顺序清单推进。
+任务看板在 `docs/todo.md`,当前状态与待决策在 `docs/context.md`(均为活文档,本文件不记进度)。不分里程碑阶段,按顺序清单推进。
 
 固定优先级:后端核心链路(/records/parse)最高;它跑通前不做任何前端和部署工作。
 
