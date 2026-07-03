@@ -70,7 +70,8 @@ class ExerciseRecord(Model):
     source = fields.CharField(
         max_length=32
     )  # user_reported | met_table | llm_estimated
-    kcal = fields.FloatField()
+    kcal = fields.FloatField()  # 总耗(含同时段基础代谢,市面口径)
+    kcal_net = fields.FloatField(null=True)  # 净耗(MET-1 计;自报热量时未知)
     exercise_name = fields.CharField(max_length=64)
     met = fields.FloatField()
     duration_min = fields.FloatField()  # 力量组=组动作时间+距上一组间隔(后端推断)
@@ -109,6 +110,28 @@ class FoodRecord(Model):
 
     class Meta:
         table = "food_records"
+
+
+class UserFood(Model):
+    """用户自定义食物:按"份"定义一次,查表优先级高于标准表。"""
+
+    id = fields.IntField(primary_key=True)
+    user = fields.ForeignKeyField(
+        "models.User", related_name="user_foods", on_delete=fields.CASCADE
+    )
+    name = fields.CharField(max_length=64)
+    unit = fields.CharField(max_length=16, default="份")  # 份/勺/碗/个,自由文本
+    kcal = fields.FloatField()  # 每单位
+    protein = fields.FloatField(null=True)
+    fat = fields.FloatField(null=True)
+    cho = fields.FloatField(null=True)
+    fiber = fields.FloatField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "user_foods"
+        unique_together = (("user", "name"),)
 
 
 class AiMemory(Model):

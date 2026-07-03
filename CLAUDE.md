@@ -21,8 +21,9 @@
    - 复合菜(如番茄炒蛋)由 LLM 拆解为多条食材记录
 2. **解析优先级(严格顺序):**
    1. 用户自己报了热量数字 → 直接采用,`source="user_reported"`
-   2. 能匹配到静态表 → LLM 只负责口语名→标准名映射,数值查表计算,`source="met_table"` / `"food_table"`
-   3. 表中没有 → LLM 估算,`source="llm_estimated"`(必须标记,前端需区分展示)
+   2. 命中该用户的自定义食物表(user_foods,按"份"定义)→ 用用户定义值,`source="user_food"`
+   3. 能匹配到静态表 → LLM 只负责口语名→标准名映射,数值查表计算,`source="met_table"` / `"food_table"`
+   4. 表中没有 → LLM 估算,`source="llm_estimated"`(必须标记,前端需区分展示)
    - **补油显式原则**(2026-07-02 用户定):炒/煎/炸类只报了食材没报油 → 自动补一条"烹调油(约10g)"独立记录,标 `llm_estimated`,可删可改;绝不把油隐性折进菜品热量。用户报了油则用用户的
    - **表外食物的估算策略——AI 定结构,表定数值**(2026-07-02 定):表里没有的食物,LLM 优先拆解为表内食材(只估克重,不估热量)或锚定最相近的表内条目取值;实在无法借表,才允许 LLM 直接报热量数。三种路径一律标 `llm_estimated`
    - **表外力量动作归强度档**(2026-07-02 定):met 表不按动作穷举(运动生理学上动作名不影响耗能,强度和时长才影响)。表里没有同名条目的力量动作,LLM 判断强度归入"力量训练(中等/大强度)"取 MET 值,动作名/负重/次数保留用户原话照存,source 记 `met_table`。训练进度数据的准确性与表无关
@@ -32,6 +33,7 @@
    - `data/met.json`:常见运动 MET 值表,含中文别名和按次数换算时长的规则(note 字段)
    - 进程启动时加载,精确匹配 + 简单别名匹配;模糊的口语对齐是 LLM 的职责,不是检索的职责
 5. **运动消耗用修正 MET 公式**(2026-07-02 用户扩定,取代旧"只用体重"):以体重+身高+性别+出生年份估算基础代谢(Mifflin-St Jeor)修正 MET,消耗更贴合个体;仍不引入体脂/手环等测量数据。身体档案一次性填,零日常负担
+   - **消耗口径双存**(2026-07-02 用户定):主数字=总耗(MET 全额,与市面 app 口径一致);每条运动记录同时存净耗(减去同时段基础代谢,即按 MET−1 计),展示以总耗为主、净耗后续按需露出
    - **力量训练按组记录时,时长由后端从时间戳推断**(2026-07-02 与用户对齐):距上一组 ≤20 分钟 → 本组时长=实际间隔(间隔天然已含本组动作,不重复计);首组或 >20 分钟 → 时长=动作时间(次数×换算秒数),并视为新一场。聚合是程序的事,用户只管一组一句正常说,不要求报时长
 6. **不做注册登录/auth**,多用户仅为简单的用户选择(users 表)
 7. **不接入外部 agent 平台,不用 LangGraph/LangChain 等编排框架**;AI 逻辑收敛在 `app/ai/`,编排=顺序函数调用
@@ -119,14 +121,15 @@ GET /users  /  POST /users             # 选用户;建用户(昵称+身高性别
 - `weight_records`:user / weight_kg / created_at。"当前体重"=最新一条,消耗计算取它,体重曲线由此出
 
 raw 层(碎片粒度,怎么说的怎么存,"鸡蛋100g"一条、"卧推60kg×10"一条):
-- `exercise_records`:user / raw_text / source / kcal / created_at + exercise_name / met / duration_min / load_kg(可空) / reps(可空) + session_id(可空)
+- `exercise_records`:user / raw_text / source / kcal(总耗) / kcal_net(净耗) / created_at + exercise_name / met / duration_min / load_kg(可空) / reps(可空) + session_id(可空)
 - `food_records`:user / raw_text / source / kcal / created_at + food_name / grams / protein / fat / cho / fiber + meal_id(可空)
 
 new 层(聚合粒度,AI+规则维护,可重算):
 - `meals`:user / name(AI 起名) / start / end / kcal_total
 - `sessions`:user / name / start / end / kcal_total
 
-记忆:
+个性化:
+- `user_foods`:user / name(用户内唯一) / unit(份/勺/碗,自由文本) / kcal 及营养(每单位,营养可空)。对话中"记住……"即可建;查表优先级高于标准表
 - `ai_memories`:user / kind(alias|habit|correction) / content / updated_at。纠正发生时即时学;每日首次请求顺带触发巩固(不引入调度器)
 
 ## 开发命令
