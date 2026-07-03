@@ -2,7 +2,7 @@
  "meta": {
   "source": "《中国食物成分表标准版(第6版)》,经 Sanotsu/china-food-composition-data (json_data_vision_251206_Qwen2-5-VL-72B-Instruct) 提取,本脚本清洗校验",
   "per": "每100g可食部",
-  "count": 1575
+  "count": 1595
  },
  "items": [
   {
@@ -247,6 +247,171 @@
    "protein": 14.0,
    "fat": 1.8,
    "cho": 71.5,
+   "fiber": null
+  },
+  {
+   "code": "011316",
+   "name": "面条(富强粉，切面)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 277.0,
+   "protein": 8.9,
+   "fat": 0.4,
+   "cho": 60.7,
+   "fiber": null
+  },
+  {
+   "code": "011317",
+   "name": "面条(富强粉，煮)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 107.0,
+   "protein": 3.9,
+   "fat": 0.4,
+   "cho": 22.8,
+   "fiber": null
+  },
+  {
+   "code": "011401",
+   "name": "花卷",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 214.0,
+   "protein": 6.4,
+   "fat": 1.0,
+   "cho": 45.6,
+   "fiber": 1.5
+  },
+  {
+   "code": "011402",
+   "name": "空锅饼",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 278.0,
+   "protein": 8.6,
+   "fat": 0.2,
+   "cho": 60.9,
+   "fiber": 0.7
+  },
+  {
+   "code": "011403",
+   "name": "烙饼(标准粉)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 258.0,
+   "protein": 7.5,
+   "fat": 2.3,
+   "cho": 52.9,
+   "fiber": 1.9
+  },
+  {
+   "code": "011404x",
+   "name": "馒头(代表值)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 223.0,
+   "protein": 7.0,
+   "fat": 1.1,
+   "cho": 47.0,
+   "fiber": 1.3
+  },
+  {
+   "code": "011405",
+   "name": "馒头(标准粉)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 236.0,
+   "protein": 7.8,
+   "fat": 1.0,
+   "cho": 49.8,
+   "fiber": 1.5
+  },
+  {
+   "code": "011407",
+   "name": "烧饼(加糖)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 298.0,
+   "protein": 8.0,
+   "fat": 2.1,
+   "cho": 62.7,
+   "fiber": 2.1
+  },
+  {
+   "code": "011408",
+   "name": "油饼",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 403.0,
+   "protein": 7.9,
+   "fat": 22.9,
+   "cho": 42.4,
+   "fiber": 2.0
+  },
+  {
+   "code": "011409",
+   "name": "油条",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 388.0,
+   "protein": 6.9,
+   "fat": 17.6,
+   "cho": 51.0,
+   "fiber": 0.9
+  },
+  {
+   "code": "011410",
+   "name": "花卷(加牛奶)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 282.0,
+   "protein": 6.5,
+   "fat": 3.2,
+   "cho": 58.9,
+   "fiber": null
+  },
+  {
+   "code": "011411",
+   "name": "馒头(富强粉)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 235.0,
+   "protein": 7.1,
+   "fat": 1.3,
+   "cho": 50.9,
+   "fiber": null
+  },
+  {
+   "code": "011501",
+   "name": "水面筋",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 142.0,
+   "protein": 23.5,
+   "fat": 0.1,
+   "cho": 12.3,
+   "fiber": 0.9
+  },
+  {
+   "code": "011502",
+   "name": "油面筋",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 492.0,
+   "protein": 26.9,
+   "fat": 25.1,
+   "cho": 40.4,
+   "fiber": 1.3
+  },
+  {
+   "code": "011503",
+   "name": "面筋(肉馅)",
+   "aliases": [],
+   "category": "谷类及其制品-小麦",
+   "kcal": 364.0,
+   "protein": 16.2,
+   "fat": 33.2,
+   "cho": 0.1,
    "fiber": null
   },
   {
@@ -1033,6 +1198,61 @@
    "fat": 2.8,
    "cho": 70.2,
    "fiber": null
+  },
+  {
+   "code": "019011",
+   "name": "莜麦面",
+   "aliases": [],
+   "category": "谷类及其制品-其他",
+   "kcal": 391.0,
+   "protein": 13.7,
+   "fat": 8.6,
+   "cho": 67.7,
+   "fiber": null
+  },
+  {
+   "code": "019012",
+   "name": "燕麦",
+   "aliases": [],
+   "category": "谷类及其制品-其他",
+   "kcal": 338.0,
+   "protein": 10.1,
+   "fat": 0.2,
+   "cho": 77.4,
+   "fiber": 6.0
+  },
+  {
+   "code": "019013",
+   "name": "藜麦(散装)",
+   "aliases": [],
+   "category": "谷类及其制品-其他",
+   "kcal": 357.0,
+   "protein": 14.0,
+   "fat": 6.0,
+   "cho": 57.8,
+   "fiber": 6.5
+  },
+  {
+   "code": "019014",
+   "name": "藜麦(散装)",
+   "aliases": [],
+   "category": "谷类及其制品-其他",
+   "kcal": 367.0,
+   "protein": 10.4,
+   "fat": 7.5,
+   "cho": 58.5,
+   "fiber": 11.3
+  },
+  {
+   "code": "019201",
+   "name": "高粱面面条",
+   "aliases": [],
+   "category": "谷类及其制品-其他",
+   "kcal": 304.0,
+   "protein": 7.0,
+   "fat": 0.2,
+   "cho": 68.7,
+   "fiber": 0.3
   },
   {
    "code": "021101",

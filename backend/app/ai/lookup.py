@@ -12,6 +12,17 @@ from pathlib import Path
 _DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 
 
+def _norm(s: str) -> str:
+    """查表键归一化:去空白,全角括号/逗号转半角——两侧(建表与查询)同用。"""
+    return (
+        s.strip()
+        .replace(" ", "")
+        .replace("（", "(")
+        .replace("）", ")")
+        .replace("，", ",")
+    )
+
+
 @dataclass(frozen=True)
 class FoodItem:
     name: str
@@ -45,9 +56,9 @@ def _load_food() -> tuple[dict[str, FoodItem], dict[str, str]]:
             cho=item["cho"],
             fiber=item["fiber"],
         )
-        by_name.setdefault(food.name, food)
+        by_name.setdefault(_norm(food.name), food)
         for alias in item["aliases"]:
-            alias_owners.setdefault(alias, set()).add(food.name)
+            alias_owners.setdefault(_norm(alias), set()).add(_norm(food.name))
     # 歧义别名(指向多个不同条目,如"西红柿"→番茄/奶柿子)不进精确映射,
     # 留给 LLM 映射阶段用常识裁决——确定性归代码,歧义归 AI
     alias_to_name = {
@@ -69,9 +80,9 @@ def _load_met() -> tuple[dict[str, MetItem], dict[str, str]]:
             count_seconds=item["count_seconds"],
             note=item["note"],
         )
-        by_name.setdefault(met.name, met)
+        by_name.setdefault(_norm(met.name), met)
         for alias in item["aliases"]:
-            alias_to_name.setdefault(alias, met.name)
+            alias_to_name.setdefault(_norm(alias), _norm(met.name))
     return by_name, alias_to_name
 
 
@@ -80,12 +91,12 @@ _MET_BY_NAME, _MET_ALIAS = _load_met()
 
 
 def find_food(name: str) -> FoodItem | None:
-    key = name.strip()
+    key = _norm(name)
     return _FOOD_BY_NAME.get(key) or _FOOD_BY_NAME.get(_FOOD_ALIAS.get(key, ""))
 
 
 def find_exercise(name: str) -> MetItem | None:
-    key = name.strip()
+    key = _norm(name)
     return _MET_BY_NAME.get(key) or _MET_BY_NAME.get(_MET_ALIAS.get(key, ""))
 
 

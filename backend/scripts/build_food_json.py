@@ -10,8 +10,11 @@
    (专抓 OCR 把 energyKJ 错认进 energyKCal 这类数量级错误)
 3. 双版本交叉比对:与 OCR 版(json_data)按 foodCode 逐条对核心数值
 
-缺 kcal、能量校验不过、或两版本 kcal 严重不一致的条目不进 food.json,
+缺名称、缺 kcal、能量校验不过、或两版本 kcal 严重不一致的条目不进 food.json,
 写入 scripts/food_needs_review.json 供人工核对;其余字段的不一致仅记为 advisory。
+
+补充工序:视觉版提取时丢失的条目(馒头/花卷/煮面条等,仅存在于 OCR 旧版),
+过同一套质检后并入;婴幼儿食品类目维持排除(品牌商品数据,非通用食物)。
 """
 
 import argparse
@@ -83,7 +86,7 @@ def main() -> None:
     vision = load_dir(root, VISION_DIR)
     ocr = load_dir(root, OCR_DIR)
 
-    items, excluded, advisory = [], [], []
+    items, excluded, advisory, merged_from_old = [], [], [], []
     for code, (category, entry) in sorted(vision.items()):
         name, aliases = split_name(entry.get("foodName", ""))
         kcal = parse_num(entry.get("energyKCal"))
@@ -93,6 +96,8 @@ def main() -> None:
         fiber = parse_num(entry.get("dietaryFiber"))
 
         reasons = []
+        if not name:
+            reasons.append("缺名称")
         if kcal is None:
             reasons.append("缺 kcal")
         else:
@@ -132,6 +137,46 @@ def main() -> None:
                 advisory.append({"code": code, "name": name, "notes": cross_notes})
             items.append(record)
 
+    # 补充工序:仅旧版存在的条目(视觉版丢失),同一套质检后并入
+    for code, (category, entry) in sorted(ocr.items()):
+        if code in vision or "婴" in category:
+            continue
+        name, aliases = split_name(entry.get("foodName", ""))
+        kcal = parse_num(entry.get("energyKCal"))
+        protein = parse_num(entry.get("protein"))
+        fat = parse_num(entry.get("fat"))
+        cho = parse_num(entry.get("CHO"))
+        fiber = parse_num(entry.get("dietaryFiber"))
+
+        reasons = []
+        if not name:
+            reasons.append("缺名称")
+        if kcal is None:
+            reasons.append("缺 kcal")
+        else:
+            atwater = atwater_reason(kcal, protein, fat, cho, fiber)
+            if atwater:
+                reasons.append(atwater)
+
+        record = {
+            "code": code,
+            "name": name,
+            "aliases": aliases,
+            "category": category,
+            "kcal": kcal,
+            "protein": protein,
+            "fat": fat,
+            "cho": cho,
+            "fiber": fiber,
+        }
+        if reasons:
+            excluded.append({**record, "reasons": ["仅旧版(OCR)存在"] + reasons})
+        else:
+            merged_from_old.append({"code": code, "name": name})
+            items.append(record)
+
+    items.sort(key=lambda r: r["code"])
+
     food_json = {
         "meta": {
             "source": "《中国食物成分表标准版(第6版)》,经 Sanotsu/china-food-composition-data "
@@ -150,7 +195,11 @@ def main() -> None:
     review_path = backend / "scripts" / "food_needs_review.json"
     review_path.write_text(
         json.dumps(
-            {"excluded": excluded, "advisory_kept_vision_value": advisory},
+            {
+                "excluded": excluded,
+                "advisory_kept_vision_value": advisory,
+                "merged_from_old_version": merged_from_old,
+            },
             ensure_ascii=False,
             indent=1,
         )
@@ -165,6 +214,9 @@ def main() -> None:
     for e in excluded:
         print(f"  - [{e['code']}] {e['name']}: {'; '.join(e['reasons'])}")
     print(f"advisory(非 kcal 字段两版不一致,已采视觉版值){len(advisory)} 条")
+    print(f"自旧版补入 {len(merged_from_old)} 条:")
+    for m in merged_from_old:
+        print(f"  + [{m['code']}] {m['name']}")
 
 
 if __name__ == "__main__":
