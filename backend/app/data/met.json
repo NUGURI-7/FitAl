@@ -3,7 +3,7 @@
   "source": "MET 值依据 Compendium of Physical Activities(2011/2024 版);个别集体课项目(广场舞/尊巴)参考公开实测研究",
   "usage": "kcal 由后端公式计算;count_seconds = 按次数报告的运动每次折算秒数(时长 = 次数 × count_seconds),LLM 不做换算",
   "note": "起始集,按真实使用缺啥补啥",
-  "count": 50
+  "count": 55
  },
  "items": [
   {"name": "散步", "aliases": ["慢走", "遛弯", "溜达"], "met": 2.8, "count_seconds": null, "note": "约3km/h,闲逛速度"},
@@ -25,6 +25,11 @@
   {"name": "开合跳", "aliases": ["jumping jacks"], "met": 8.0, "count_seconds": 2, "note": "大强度"},
   {"name": "弓步蹲", "aliases": ["箭步蹲", "弓箭步"], "met": 5.0, "count_seconds": 3, "note": "自重,中等强度"},
   {"name": "自重训练(综合)", "aliases": ["徒手健身", "自重循环"], "met": 3.8, "count_seconds": null, "note": "中等强度混合自重动作;高强度连续做按8.0另记"},
+  {"name": "卧推", "aliases": ["杠铃卧推", "哑铃卧推", "平板卧推", "上斜卧推"], "met": 6.0, "count_seconds": 4, "note": "按组报告,时长由后端从时间戳推断(含组间歇)"},
+  {"name": "杠铃深蹲", "aliases": ["负重深蹲", "杠铃蹲", "颈后深蹲"], "met": 6.0, "count_seconds": 4, "note": "同卧推,按组计"},
+  {"name": "硬拉", "aliases": ["传统硬拉", "罗马尼亚硬拉", "直腿硬拉"], "met": 6.0, "count_seconds": 4, "note": "同卧推,按组计"},
+  {"name": "推举", "aliases": ["肩推", "站姿推举", "哑铃肩推", "杠铃推举"], "met": 6.0, "count_seconds": 4, "note": "同卧推,按组计"},
+  {"name": "杠铃划船", "aliases": ["俯身划船", "哑铃划船"], "met": 6.0, "count_seconds": 4, "note": "同卧推,按组计;划船机另有条目"},
   {"name": "力量训练(中等)", "aliases": ["撸铁", "举铁", "器械训练", "健身房练力量"], "met": 3.5, "count_seconds": null, "note": "常规组间休息的器械/自由重量"},
   {"name": "力量训练(大强度)", "aliases": ["大重量训练", "力量举"], "met": 6.0, "count_seconds": null, "note": "大重量、短休息"},
   {"name": "壶铃训练", "aliases": ["壶铃摆荡", "壶铃"], "met": 8.0, "count_seconds": null, "note": "摆荡等复合动作"},
