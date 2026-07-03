@@ -9,7 +9,7 @@
 - **纯记录工具,不做任何建议/计划/教练功能**
 - 自用 + 少量朋友使用,无并发/商业化考量
 - 后端:Python (FastAPI + Tortoise ORM + PostgreSQL)
-- 前端:iOS 原生 (Swift + SwiftUI),独立目录,后期开发;安卓是远期考虑(iOS 版本完成后再评估),当前不设计、不预留
+- 前端多端分阶段:**响应式 Web 最先,移动端优先**(手机浏览器是主战场,PC 能用即可、不专门打磨)→ **iOS 原生(Swift + SwiftUI)** 次之 → 安卓原生远期(有真实安卓用户再评估)。各端独立目录、独立代码,后端契约对所有端通用;Web 具体功能形态待与用户对齐
 - 这是一个新项目,按下方"当前阶段"推进
 
 ## 核心架构决策(已定稿,不要更改)
@@ -23,15 +23,19 @@
    1. 用户自己报了热量数字 → 直接采用,`source="user_reported"`
    2. 能匹配到静态表 → LLM 只负责口语名→标准名映射,数值查表计算,`source="met_table"` / `"food_table"`
    3. 表中没有 → LLM 估算,`source="llm_estimated"`(必须标记,前端需区分展示)
-3. **LLM 输出必须用 Pydantic structured output 强约束**(discriminated union:`ExerciseRecord | FoodRecord`),接口响应为 `list[ParseResult]`(一句话可能含多条记录)
+   - **补油显式原则**(2026-07-02 用户定):炒/煎/炸类只报了食材没报油 → 自动补一条"烹调油(约10g)"独立记录,标 `llm_estimated`,可删可改;绝不把油隐性折进菜品热量。用户报了油则用用户的
+3. **LLM 输出必须用 Pydantic structured output 强约束**(discriminated union:`ExerciseRecord | FoodRecord | WeightRecord`),接口响应为 `list[ParseResult]`(一句话可能含多条记录;"今天75公斤"也是一句话记录)
 4. **静态数据走内存 dict,不用数据库、不用 RAG、不用向量检索**
    - `data/food.json`:约 1657 条,源自《中国食物成分表(第6版)》,字段:name/kcal/protein/fat/cho/fiber(每100g)
    - `data/met.json`:常见运动 MET 值表,含中文别名和按次数换算时长的规则(note 字段)
    - 进程启动时加载,精确匹配 + 简单别名匹配;模糊的口语对齐是 LLM 的职责,不是检索的职责
-5. **运动消耗公式只用体重**:kcal = MET × 体重(kg) × 时长(h)。不引入身高/体脂/BMR/TDEE
+5. **运动消耗用修正 MET 公式**(2026-07-02 用户扩定,取代旧"只用体重"):以体重+身高+性别+出生年份估算基础代谢(Mifflin-St Jeor)修正 MET,消耗更贴合个体;仍不引入体脂/手环等测量数据。身体档案一次性填,零日常负担
+   - **力量训练按组记录时,时长由后端从时间戳推断**(2026-07-02 与用户对齐):每组消耗 = 组动作时间 + 距上一组的间隔,间隔超 20 分钟视为新一场,首组只算动作时间。聚合是程序的事,用户只管一组一句正常说,不要求报时长
 6. **不做注册登录/auth**,多用户仅为简单的用户选择(users 表)
-7. 不接入 CoCoWork 或任何外部 agent 平台;AI 逻辑收敛在 `app/ai/` 模块内,一次 LLM 调用解决
-8. **数据库迁移用 Tortoise 内置迁移系统**(`tortoise init / makemigrations / migrate`),**杜绝 aerich**;不依赖 generate_schemas 自动建表
+7. **不接入外部 agent 平台,不用 LangGraph/LangChain 等编排框架**;AI 逻辑收敛在 `app/ai/`,编排=顺序函数调用
+   - **读写不对称**(2026-07-02 定):写路径=管线+每步微循环(schema 校验/查表命中为硬反馈,失败带错重试,重试尽降级 llm_estimated),笔在代码手里;读路径(后续读代理)=PydanticAI 只读工具 agent,模型有完全自由——只读结构上无害
+8. **数据库迁移用 Tortoise 内置迁移系统**(`tortoise init / makemigrations / migrate`);不依赖 generate_schemas 自动建表
+9. **LLM 选型**:PydanticAI(structured output 强约束+校验重试+模型无关)+ **deepseek-v4-flash**(OpenAI 兼容,base_url `https://api.deepseek.com`;旧 deepseek-chat 2026/07/24 弃用,勿再选);key 放 `.env` 的 `DEEPSEEK_API_KEY`;换模型只改配置不改代码
 
 ## 目录结构
 
@@ -47,9 +51,10 @@ backend/
     api.py             # 路由(骨架期仅 /health,业务端点按契约实现,不写占位假端点)
     migrations/        # Tortoise 内置迁移文件(CLI 生成,不手写)
     ai/
-      schema.py        # Pydantic 输出 schema(ExerciseRecord/FoodRecord union)
-      parser.py        # LLM 调用 + structured output
+      schema.py        # Pydantic 输出 schema(Exercise/Food/Weight union)
+      parser.py        # 洗数据:LLM 调用 + structured output
       lookup.py        # 内存 dict 加载与查表、消耗/热量计算
+      aggregate.py     # 聚合:规则归组 + AI 裁决模糊边界/起名(raw→new)
     data/
       food.json
       met.json
@@ -58,7 +63,8 @@ backend/
 docs/
   product.md           # 产品定义:做什么/不做什么/典型输入输出
   context.md           # 活文档:当前进度、最近改动、待决策
-ios/                   # SwiftUI 前端(后期建立,独立于 backend)
+web/                   # 响应式 Web 前端,移动端优先(后端跑通后建立)
+ios/                   # SwiftUI 前端(Web 之后,独立于 backend)
 ```
 
 ### 后端 Import 约定
@@ -67,23 +73,58 @@ ios/                   # SwiftUI 前端(后期建立,独立于 backend)
 - 所有后端内部 import 使用 `from app.xxx` 形式,例如 `from app.models import User`
 - 运行后端命令时在 `backend/` 目录下执行
 
-## 核心接口契约
+## 核心接口契约(v2,2026-07-02)
 
 ```
-POST /records/parse
-请求: { "text": "刚做了20个俯卧撑", "user_id": 1 }
-响应: list[ParseResult](解析结果,已入库)
+POST /chat                             # 唯一对话入口(SSE 流式):记录与查看都走它
+  请求: { "user_id": 1, "text": "卧推60公斤10个" }
+  intent=record(v1 仅此):洗数据→raw→聚合→new
+    事件流: event:records(入库 raw 记录卡片,带 session_id/meal_id)
+            event:reply(模板拼接的一句话回执,零 LLM 成本)
+  intent=query(后续,读代理):event:answer 流式回答;周报=查询的一种
+  intent=clarify(后续):event:clarify 澄清反问
+  读代理/澄清走同一入口的新 intent,不另设端点、不建占位
 
-PATCH /records/{id}    # 解析错误时允许手动修正数字
+PATCH  /records/exercise/{id} | /records/food/{id}   # 修正,只落 raw
+  改输入量(克数/次数/时长)→ 后端重算 kcal
+  直接改 kcal → 采用用户数,source 改 user_reported
+DELETE 同路径                          # 删记录(如删自动补的油)
+  修正/删除均触发所在聚合增量重算
+
+GET /days/{date}?user_id=1             # 数据展示主接口,只读 new 层
+  { "intake_kcal", "burn_kcal", "weight",
+    "meals":    [ { "name", "start", "kcal_total", "items": [...] } ],
+    "sessions": [ { "name", "start", "end", "kcal_total", "items": [...] } ] }
+
+GET /weights?user_id=1&days=90         # 体重曲线
+GET /users  /  POST /users             # 选用户;建用户(昵称+身高性别出生年+初始体重)
 ```
 
-用户体重等固定信息由后端按 user_id 读取后注入 prompt,前端不传。
+用户体重/身体档案由后端按 user_id 读取后注入 prompt,前端不传。
 
-## 数据库
+## 数据主流程与数据库(2026-07-02 定稿)
 
-仅两张表:
-- `users`:昵称、体重(体重参与消耗计算)
-- `records`:user 外键、record_type、原始 text、解析后字段、source、created_at
+主流程:**userinput → AI 洗数据(解析/映射/查表计算)→ raw 层 → AI 聚合(归组/起名)→ new 层 → 数据展示**。各环节以函数为边界,后续允许在环节间插入新步骤。
+
+三条铁律:
+1. **raw 是唯一事实源**:修正/删除只落 raw;new 层可随时整层从 raw 重算,坏了重建,永不手补
+2. **确定性的事代码做,模糊的事 AI 做**:求和、按时间间隔归组是代码;AI 只裁决模糊边界(归哪顿/哪场)与给聚合起名("番茄炒蛋"从鸡蛋+番茄+油碎片里认出)
+3. **聚合在写入时增量触发**:每次入库顺带归组;展示接口零 AI 调用
+
+七张表:
+- `users`:昵称、身高、性别、出生年份(修正 MET 公式用;体重不放这里)
+- `weight_records`:user / weight_kg / created_at。"当前体重"=最新一条,消耗计算取它,体重曲线由此出
+
+raw 层(碎片粒度,怎么说的怎么存,"鸡蛋100g"一条、"卧推60kg×10"一条):
+- `exercise_records`:user / raw_text / source / kcal / created_at + exercise_name / met / duration_min / load_kg(可空) / reps(可空) + session_id(可空)
+- `food_records`:user / raw_text / source / kcal / created_at + food_name / grams / protein / fat / cho / fiber + meal_id(可空)
+
+new 层(聚合粒度,AI+规则维护,可重算):
+- `meals`:user / name(AI 起名) / start / end / kcal_total
+- `sessions`:user / name / start / end / kcal_total
+
+记忆:
+- `ai_memories`:user / kind(alias|habit|correction) / content / updated_at。纠正发生时即时学;每日首次请求顺带触发巩固(不引入调度器)
 
 ## 开发命令
 
@@ -98,6 +139,8 @@ ruff check && ruff format        # lint
 ```
 
 数据库为**云端 PostgreSQL**(不跑本地容器):连接信息以 `PG_HOST / PG_PORT / PG_USER / PG_PASSWORD / PG_DATABASE` 分字段填在 `backend/.env`,由用户维护;涉及外部服务的连接配置一律交给用户处理。
+
+双库策略:**单元测试跑内存 SQLite**(不依赖云库),开发/生产连云 PG。跨方言能力由 Tortoise ORM 提供,**不自建仓储层/repository 抽象**。
 
 ## 环境与密钥
 

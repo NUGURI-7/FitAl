@@ -7,9 +7,13 @@
 
 - [x] 后端骨架(已验收:云端 PG 迁移建表成功,pytest /health 通过)
 - [x] 数据表:food.json(1575 条)/ met.json(50 条起始集)已生成并校验
-- [ ] 解析链路:/records/parse 跑通,curl 可验证
-- [ ] 真实使用打磨:按实际解析错例优化映射
-- [ ] iOS 前端(SwiftUI,不设 deadline)
+- [ ] 洗数据链路(/chat intent=record→AI 洗→raw)+ 修正/删除接口
+- [ ] 聚合链路(raw→AI 聚合→new):meals/sessions + ai_memories
+- [ ] 展示接口:/days、/weights、用户管理
+- [ ] 真实使用打磨:按实际解析错例优化映射与记忆
+- [ ] 读代理(同一 /chat 入口新 intent:自然语言查数,周报是查询的一种)→ 澄清式反问
+- [ ] 响应式 Web 前端(移动端优先,PC 能用即可)
+- [ ] iOS 原生前端(SwiftUI,不设 deadline)
 
 当前位置:数据表已交付,下一步 **解析链路**。
 
@@ -27,10 +31,27 @@
 - 已验证(不依赖 DB 的部分):`ruff format + check` 全过;`from app.main import app` 导入成功;`tortoise init` + `makemigrations --name initial` 离线生成 `0001_initial.py`(users / records 两表,外键级联)
 - 骨架尚未提交 git
 
+## 设计对齐进度(2026-07-02,与用户逐块过设计)
+
+- [x] 核心流程(LLM 只听懂/后端算数/可修正)+ 输入画像:短句、高频、一次一条
+- [x] 力量按组记录:消耗=组动作+距上一组间隔,>20min 算新场,程序聚合
+- [x] 数据库定稿:四张表拆表方案(见 CLAUDE.md「数据库」),餐次/场次现算不存
+- [x] 身体档案:身高/性别/出生年份进 users,修正 MET;体重历史 weight_records
+- [x] 补油显式原则:没报油自动补独立条目,标 AI 估算可删
+- [x] 主流程定稿:userinput→AI 洗→raw→AI 聚合→new→展示;三条铁律;七张表;ai_memories 记忆
+- [x] 接口契约 v3:chat 单入口(SSE,intent 路由)+ REST 展示/修正接口
+- [x] 读写不对称:写=管线+微循环校验重试;读=只读工具 agent;无 LangGraph
+- [x] LLM 选型:PydanticAI + deepseek-v4-flash(deepseek-chat 将于 2026/07/24 弃用);双库策略:测试 SQLite/生产云 PG,不自建仓储层
+
+**设计全部收官(2026-07-02)。下一步:写洗数据链路,动手前先按新表结构改 models + 迁移。**
+
 ## 待决策
 
-1. **Record 类型专属字段怎么存**:单表 + JSONB 详情字段(倾向) vs 拆 exercise/food 两张子表 —— 做解析链路设计 models 时定
-2. **LLM 库与模型选型**:倾向 PydanticAI,底层模型未定 —— 写 `app/ai/` 时定
+1. Web 端具体产品功能形态(页面/交互细节)—— 开做 Web 前与用户对齐
+
+## 待用户
+
+`backend/.env` 补一行 `DEEPSEEK_API_KEY=sk-xxx`(DeepSeek 开放平台申请)
 
 ## 历史摘要
 
