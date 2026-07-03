@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
     "tortoise-orm[asyncpg]>=1.1.7",
     "pydantic-settings>=2.6.0",
+    "pydantic-ai-slim[openai]>=2.4.0",
 ]
 
 [dependency-groups]

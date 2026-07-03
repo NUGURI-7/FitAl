@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     PG_PASSWORD: str = ""
     PG_DATABASE: str = "fital"
 
+    # ==================== LLM ====================
+    DEEPSEEK_API_KEY: str = ""
+
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE,
         env_file_encoding="utf-8",

@@ -40,9 +40,12 @@ class MetItem:
     met: float
     count_seconds: float | None  # 按次数报告的运动:每次折算秒数
     note: str
+    aliases: tuple[str, ...] = ()
 
 
-def _load_food() -> tuple[dict[str, FoodItem], dict[str, str]]:
+def _load_food() -> tuple[
+    dict[str, FoodItem], dict[str, str], dict[str, tuple[str, ...]]
+]:
     raw = json.loads((_DATA_DIR / "food.json").read_text(encoding="utf-8"))
     by_name: dict[str, FoodItem] = {}
     alias_owners: dict[str, set[str]] = {}
@@ -60,13 +63,18 @@ def _load_food() -> tuple[dict[str, FoodItem], dict[str, str]]:
         for alias in item["aliases"]:
             alias_owners.setdefault(_norm(alias), set()).add(_norm(food.name))
     # 歧义别名(指向多个不同条目,如"西红柿"→番茄/奶柿子)不进精确映射,
-    # 留给 LLM 映射阶段用常识裁决——确定性归代码,歧义归 AI
+    # 但保留在歧义表里供候选召回——精确归代码,裁决归 AI
     alias_to_name = {
         alias: next(iter(names))
         for alias, names in alias_owners.items()
         if len(names) == 1 and alias not in by_name
     }
-    return by_name, alias_to_name
+    ambiguous = {
+        alias: tuple(sorted(names))
+        for alias, names in alias_owners.items()
+        if len(names) > 1
+    }
+    return by_name, alias_to_name, ambiguous
 
 
 def _load_met() -> tuple[dict[str, MetItem], dict[str, str]]:
@@ -79,6 +87,7 @@ def _load_met() -> tuple[dict[str, MetItem], dict[str, str]]:
             met=item["met"],
             count_seconds=item["count_seconds"],
             note=item["note"],
+            aliases=tuple(item["aliases"]),
         )
         by_name.setdefault(_norm(met.name), met)
         for alias in item["aliases"]:
@@ -86,7 +95,7 @@ def _load_met() -> tuple[dict[str, MetItem], dict[str, str]]:
     return by_name, alias_to_name
 
 
-_FOOD_BY_NAME, _FOOD_ALIAS = _load_food()
+_FOOD_BY_NAME, _FOOD_ALIAS, _FOOD_AMBIGUOUS = _load_food()
 _MET_BY_NAME, _MET_ALIAS = _load_met()
 
 
@@ -98,6 +107,45 @@ def find_food(name: str) -> FoodItem | None:
 def find_exercise(name: str) -> MetItem | None:
     key = _norm(name)
     return _MET_BY_NAME.get(key) or _MET_BY_NAME.get(_MET_ALIAS.get(key, ""))
+
+
+def met_items() -> list[MetItem]:
+    """全部运动条目(注入解析 prompt 用)。"""
+    return list(_MET_BY_NAME.values())
+
+
+def candidate_foods(query: str, limit: int = 8) -> list[str]:
+    """微循环第二轮的候选:按字符重合度粗召回,精挑交 LLM。
+
+    纯子串匹配抓不住"鸡胸肉→鸡胸脯肉"这类插字变体,故用字符集重合度;
+    子串命中额外加权置顶。
+    """
+    q = _norm(query)
+    if not q:
+        return []
+    q_chars = set(q)
+    scored: list[tuple[int, int, str]] = []
+
+    def consider(text: str, target_name: str) -> None:
+        overlap = len(q_chars & set(text))
+        if q in text or text in q:
+            overlap += len(q)
+        if overlap >= 2 and overlap * 2 >= len(q_chars):
+            scored.append((-overlap, len(text), target_name))
+
+    for name in _FOOD_BY_NAME:
+        consider(name, name)
+    for alias, name in _FOOD_ALIAS.items():
+        consider(alias, name)
+    for alias, names in _FOOD_AMBIGUOUS.items():
+        for name in names:
+            consider(alias, name)
+
+    out: list[str] = []
+    for _, _, name in sorted(scored):
+        if name not in out:
+            out.append(name)
+    return out[:limit]
 
 
 def food_nutrition(item: FoodItem, grams: float) -> dict[str, float | None]:
