@@ -24,6 +24,8 @@
    2. 能匹配到静态表 → LLM 只负责口语名→标准名映射,数值查表计算,`source="met_table"` / `"food_table"`
    3. 表中没有 → LLM 估算,`source="llm_estimated"`(必须标记,前端需区分展示)
    - **补油显式原则**(2026-07-02 用户定):炒/煎/炸类只报了食材没报油 → 自动补一条"烹调油(约10g)"独立记录,标 `llm_estimated`,可删可改;绝不把油隐性折进菜品热量。用户报了油则用用户的
+   - **表外食物的估算策略——AI 定结构,表定数值**(2026-07-02 定):表里没有的食物,LLM 优先拆解为表内食材(只估克重,不估热量)或锚定最相近的表内条目取值;实在无法借表,才允许 LLM 直接报热量数。三种路径一律标 `llm_estimated`
+   - **表外力量动作归强度档**(2026-07-02 定):met 表不按动作穷举(运动生理学上动作名不影响耗能,强度和时长才影响)。表里没有同名条目的力量动作,LLM 判断强度归入"力量训练(中等/大强度)"取 MET 值,动作名/负重/次数保留用户原话照存,source 记 `met_table`。训练进度数据的准确性与表无关
 3. **LLM 输出必须用 Pydantic structured output 强约束**(discriminated union:`ExerciseRecord | FoodRecord | WeightRecord`),接口响应为 `list[ParseResult]`(一句话可能含多条记录;"今天75公斤"也是一句话记录)
 4. **静态数据走内存 dict,不用数据库、不用 RAG、不用向量检索**
    - `data/food.json`:约 1657 条,源自《中国食物成分表(第6版)》,字段:name/kcal/protein/fat/cho/fiber(每100g)
