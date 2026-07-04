@@ -27,6 +27,10 @@ class ParsedExercise(BaseModel):
     est_met: float | None = Field(
         None, description="仅当动作不在 MET 表且不是力量动作时:估算的 MET 值"
     )
+    starts_new_group: bool = Field(
+        False,
+        description="归组判断:延续消息中给出的[当前训练场次]填 false;是新一场训练填 true",
+    )
 
 
 class ParsedFood(BaseModel):
@@ -41,6 +45,10 @@ class ParsedFood(BaseModel):
         None, description="该份食物总热量估算,仅当名称可能不在表里时作兜底"
     )
     is_cooking_oil: bool = Field(False, description="是否为自动补的烹调油条目")
+    starts_new_group: bool = Field(
+        False,
+        description="归组判断:延续消息中给出的[当前餐次]填 false;是新的一顿饭填 true",
+    )
 
 
 class ParsedWeight(BaseModel):

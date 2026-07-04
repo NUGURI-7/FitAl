@@ -66,6 +66,7 @@ class ResolvedExercise:
     duration_min: float | None
     load_kg: float | None
     reps: int | None
+    starts_new_group: bool = False  # AI 的归组判断:新开一场还是延续当前
 
 
 @dataclass
@@ -78,6 +79,7 @@ class ResolvedFood:
     fat: float | None
     cho: float | None
     fiber: float | None
+    starts_new_group: bool = False  # AI 的归组判断:新开一顿还是延续当前
 
 
 @dataclass
@@ -166,6 +168,7 @@ def _resolve_exercise(
         duration_min=duration,
         load_kg=p.load_kg,
         reps=p.reps,
+        starts_new_group=p.starts_new_group,
     )
 
 
@@ -195,7 +198,12 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
 
     if p.reported_kcal is not None:  # 优先级1:用户自报
         return _food_record(
-            p.name, "user_reported", p.reported_kcal, p.grams, nutrition
+            p.name,
+            "user_reported",
+            p.reported_kcal,
+            p.grams,
+            nutrition,
+            p.starts_new_group,
         )
 
     uf = user_foods.get(p.name)
@@ -207,6 +215,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             source="user_food",
             kcal=round(uf.kcal * units, 1),
             grams=p.grams,
+            starts_new_group=p.starts_new_group,
             protein=scale(uf.protein),
             fat=scale(uf.fat),
             cho=scale(uf.cho),
@@ -215,21 +224,31 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
 
     if food_item and p.grams:  # 优先级3:静态表
         return _food_record(
-            food_item.name, "food_table", nutrition["kcal"], p.grams, nutrition
+            food_item.name,
+            "food_table",
+            nutrition["kcal"],
+            p.grams,
+            nutrition,
+            p.starts_new_group,
         )
 
     if p.est_kcal is not None:  # 优先级4:估算兜底
-        return _food_record(p.name, "llm_estimated", p.est_kcal, p.grams, None)
+        return _food_record(
+            p.name, "llm_estimated", p.est_kcal, p.grams, None, p.starts_new_group
+        )
 
     raise ValueError(f"{p.name}: 查表未命中且无估算值")
 
 
-def _food_record(name, source, kcal, grams, nutrition) -> ResolvedFood:
+def _food_record(
+    name, source, kcal, grams, nutrition, starts_new=False
+) -> ResolvedFood:
     return ResolvedFood(
         food_name=name,
         source=source,
         kcal=kcal,
         grams=grams,
+        starts_new_group=starts_new,
         protein=nutrition["protein"] if nutrition else None,
         fat=nutrition["fat"] if nutrition else None,
         cho=nutrition["cho"] if nutrition else None,
@@ -300,6 +319,9 @@ def _instructions() -> str:
 9. 复合菜且用户没报食材份量 → 拆解为表内食材,逐条估克重(估克重可以,估热量不行)。
 10. "又一组/再来一组/同上"是对同一组动作的补充说明,整句只输出一条记录:
     "硬拉100公斤5个又一组" → 仅一条(name=硬拉, load_kg=100, reps=5)。
+11. 归组判断:消息可能附带[当前餐次]/[当前训练场次](当天最近一组的时间与内容)。
+    对每条 food/exercise 结合当前时间和内容常识判断:延续它 → starts_new_group=false;
+    是新的一顿饭/新一场训练 → starts_new_group=true。没附带当前组信息时此字段无效。
 
 MET 表({len(lookup.met_items())}条):
 {_met_table_block()}"""
@@ -356,12 +378,24 @@ def remap_agent() -> Agent:
 
 
 async def parse_text(
-    text: str, *, now: datetime, user_food_names: frozenset[str] = frozenset()
+    text: str,
+    *,
+    now: datetime,
+    user_food_names: frozenset[str] = frozenset(),
+    open_meal: str | None = None,
+    open_session: str | None = None,
 ) -> ParseOutput:
-    """LLM 洗数据入口:一次解析 + 未命中名字的候选重映射(微循环)。"""
+    """LLM 洗数据入口:一次解析 + 未命中名字的候选重映射(微循环)。
+
+    open_meal/open_session:当天最近一顿/一场的摘要,AI 据此判断归组(无阈值常量)。
+    """
     # 存储用 UTC;给 LLM 看的时间转本地时区,否则"中午/晚上"这类语境会错 8 小时
     local_now = now.astimezone(ZoneInfo(settings.TIMEZONE)) if now.tzinfo else now
     prefix = f"[当前时间 {local_now:%Y-%m-%d %H:%M}]"
+    if open_meal:
+        prefix += f"[当前餐次:{open_meal}]"
+    if open_session:
+        prefix += f"[当前训练场次:{open_session}]"
     if user_food_names:
         prefix += f"[用户自定义食物:{'、'.join(sorted(user_food_names))}]"
     result = await parse_agent().run(f"{prefix}\n用户说:{text}", deps=user_food_names)

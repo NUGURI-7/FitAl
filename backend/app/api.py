@@ -65,8 +65,15 @@ async def chat(body: ChatIn) -> StreamingResponse:
         for uf in await UserFood.filter(user=user)
     }
 
+    current_meal = await aggregate.open_meal(user, now)
+    current_session = await aggregate.open_session(user, now)
+
     parsed = await parser.parse_text(
-        body.text, now=now, user_food_names=frozenset(user_foods)
+        body.text,
+        now=now,
+        user_food_names=frozenset(user_foods),
+        open_meal=await aggregate.meal_summary(current_meal),
+        open_session=await aggregate.session_summary(current_session),
     )
     resolved = parser.build_records(
         parsed,
@@ -75,7 +82,9 @@ async def chat(body: ChatIn) -> StreamingResponse:
         last_exercise_at=last_exercise.created_at if last_exercise else None,
         user_foods=user_foods,
     )
-    cards = await persist_records(user, body.text, resolved)
+    cards = await persist_records(
+        user, body.text, resolved, current_meal, current_session
+    )
     reply = compose_reply(resolved)
 
     async def stream():
@@ -90,9 +99,13 @@ def _sse(event: str, data) -> str:
 
 
 async def persist_records(
-    user: User, raw_text: str, resolved: list[parser.ResolvedRecord]
+    user: User,
+    raw_text: str,
+    resolved: list[parser.ResolvedRecord],
+    current_meal=None,
+    current_session=None,
 ) -> list[dict]:
-    """落 raw 层并逐条触发增量聚合,返回给前端的记录卡片。"""
+    """落 raw 层并逐条执行 AI 的归组判断,返回给前端的记录卡片。"""
     cards: list[dict] = []
     for r in resolved:
         if isinstance(r, parser.ResolvedWeight):
@@ -118,7 +131,10 @@ async def persist_records(
                 load_kg=r.load_kg,
                 reps=r.reps,
             )
-            session = await aggregate.assign_exercise(rec)
+            current_session = await aggregate.assign_exercise(
+                rec, current_session, r.starts_new_group
+            )
+            session = current_session
             cards.append(
                 {
                     "type": "exercise",
@@ -147,7 +163,10 @@ async def persist_records(
                 cho=r.cho,
                 fiber=r.fiber,
             )
-            meal = await aggregate.assign_food(rec)
+            current_meal = await aggregate.assign_food(
+                rec, current_meal, r.starts_new_group
+            )
+            meal = current_meal
             cards.append(
                 {
                     "type": "food",
