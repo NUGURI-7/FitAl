@@ -1,39 +1,26 @@
 # FitAl 项目状态(context)
 
-> 活文档:当前进度、最近改动、待决策。每次有意义的改动后更新;保持精简,旧内容压缩进历史摘要。
-> 稳定内容(架构决策/契约/工作规则)在 `../CLAUDE.md`,产品定义在 `product.md`。
+> 活文档:当前状态、最近改动、待决策。每次有意义的改动后更新;保持精简,旧内容压缩进历史摘要。
+> 稳定内容(架构决策/契约/工作规则)在 `../CLAUDE.md`,任务看板在 `todo.md`,产品定义在 `product.md`。
 
 ## 任务清单
 
-已迁移至 **`todo.md`**(唯一任务看板:已办/进行中/待办/等用户)。
+见 **`todo.md`**(唯一任务看板:已办/进行中/待办/等用户)。
 
-## 当前状态(2026-07-02)
+## 当前状态(2026-07-04)
 
-- **数据表已交付**:
-  - `app/data/food.json` 1575 条(330KB),源自《中国食物成分表第6版》的 Sanotsu 开源提取版(视觉模型最新修正版),经 `scripts/build_food_json.py` 清洗:Tr→0、缺失→null、能量 Atwater 粗校验、与 OCR 版交叉比对;方括号别名已拆出(番茄→西红柿)
-  - 排除 82 条进 `scripts/food_needs_review.json`:其中"野生蔬菜类(048)"整类疑似 kJ 错灌 kcal 列(≈4.18 倍规律),对饮食记录零影响;高频食物抽查全部对上教科书值(鸡胸脯肉118/鸡蛋139/粳米345)
-  - `app/data/met.json` 50 条起始集(名称/别名/MET/count_seconds 按次换算秒数),数值依据 Compendium of Physical Activities;缺啥边用边补
-  - foodwake 弃用(粗纤维≠膳食纤维、溯源断裂);源仓库无明确许可,自用不分发,风险已知
+**核心链路已跑通并真机验证**:`POST /chat` 一句话 → LLM 洗数据(structured output+微循环)→ 查表/公式计算 → raw 入库 → AI 归组判断 → new 层(meals/sessions)→ SSE 返回记录卡片+模板回执。
 
-- 后端骨架已交付:`backend/`(pyproject / app/{main,config,db,models,api}.py / migrations / tests)
-- **数据库改为云端 PostgreSQL**(用户决策,推翻原"本地 docker compose"方案):连接串填 `backend/.env` 的 `DATABASE_URL`,外部连接一律由用户处理;CLAUDE.md 已同步
-- 根目录 uv init 残留(main.py / pyproject.toml / .python-version)已删,新增根 `.gitignore`
-- 已验证(不依赖 DB 的部分):`ruff format + check` 全过;`from app.main import app` 导入成功;`tortoise init` + `makemigrations --name initial` 离线生成 `0001_initial.py`(users / records 两表,外键级联)
-- 骨架尚未提交 git
+- 已落地:七张表(迁移 0001-0004 均已应用云端 PG)、food.json 1595 条、met.json 80 条、lookup 全部公式、解析器(四级优先级/补油/组间隔计时/表外归档)、AI 归组(无阈值常量,解析时附开放顿/场摘要逐条判断)
+- 时间约定:存储一律 aware UTC(use_tz=True),本地时间(Asia/Shanghai)仅在注入 prompt/展示时转换
+- LLM:任意 OpenAI 兼容端点,`.env` 四项(LLM_BASE_URL/LLM_MODEL/LLM_API_KEY 可空/LLM_EXTRA_BODY);当前 deepseek-v4-flash,思考模式经 extra_body 关闭
+- 测试 33 个全过(内存 SQLite);演示用户 id=1(昵称"演示",云端库,含若干测试记录,后续可清)
+- 已知解析瑕疵记录在案:"又一组"类表述曾拆两条(已修);牛肉面整体估算未走拆解(可打磨)
 
-## 设计对齐进度(2026-07-02,与用户逐块过设计)
-
-- [x] 核心流程(LLM 只听懂/后端算数/可修正)+ 输入画像:短句、高频、一次一条
-- [x] 力量按组记录:消耗=组动作+距上一组间隔,>20min 算新场,程序聚合
-- [x] 数据库定稿:四张表拆表方案(见 CLAUDE.md「数据库」),餐次/场次现算不存
-- [x] 身体档案:身高/性别/出生年份进 users,修正 MET;体重历史 weight_records
-- [x] 补油显式原则:没报油自动补独立条目,标 AI 估算可删
-- [x] 主流程定稿:userinput→AI 洗→raw→AI 聚合→new→展示;三条铁律;七张表;ai_memories 记忆
-- [x] 接口契约 v3:chat 单入口(SSE,intent 路由)+ REST 展示/修正接口
-- [x] 读写不对称:写=管线+微循环校验重试;读=只读工具 agent;无 LangGraph
-- [x] LLM 选型:PydanticAI + deepseek-v4-flash(deepseek-chat 将于 2026/07/24 弃用);双库策略:测试 SQLite/生产云 PG,不自建仓储层
-
-**设计全部收官(2026-07-02)。下一步:写洗数据链路,动手前先按新表结构改 models + 迁移。**
+**下一步(新会话从这里开始):聚合收尾**
+1. AI 起名:meals/sessions.name 由 AI 根据内容生成(展示用);建议并入归组同一次调用或聚合时单独轻调用,注意起名失败需降级(时间段命名)
+2. ai_memories 接入:纠正时即时学 + 每日首次请求巩固;解析 prompt 注入记忆
+3. 之后按看板:修正/删除接口(PATCH/DELETE,触发聚合重算)→ 展示接口(/days /weights /users)
 
 ## 待决策
 
@@ -41,4 +28,6 @@
 
 ## 历史摘要
 
-- 2026-07-02:项目启动。定稿 CLAUDE.md;建立三文档体系;批准并执行后端骨架(CoCoWork 参考模式已吸收,参考清单随之删除);DB 方案改为云端直连。
+- 2026-07-02:项目启动,定稿三文档体系与全部架构决策;后端骨架(FastAPI+Tortoise+云端 PG);数据表生成与校验(排除 82 条坏数据,找回 20 条主食);七张表落库;lookup 公式模块。期间用户多次纠偏:节奏放慢逐块过设计、契约类产物实现前须过目、不举例不类比、表结构拆表不用 JSONB。
+- 2026-07-03:解析器(structured output+微循环 harness+四级优先级);LLM 改通用 OpenAI 兼容接入;真机联调四场景全对。
+- 2026-07-04:/chat 端点(SSE)+ 时区统一 UTC(修真机 bug);归组由固定阈值改为 AI 判断(用户定);决策入档:不做思考过程展示。
