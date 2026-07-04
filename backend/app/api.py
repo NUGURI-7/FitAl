@@ -6,12 +6,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from tortoise import Tortoise, timezone
 
-from app.ai import aggregate, parser
+from app.ai import aggregate, lookup, parser
 from app.ai.schema import ParsedMemory, ParsedUserFoodDef
 from app.models import (
     AiMemory,
     ExerciseRecord,
     FoodRecord,
+    Meal,
+    Session,
     User,
     UserFood,
     WeightRecord,
@@ -279,3 +281,194 @@ def compose_reply(resolved: list[parser.ResolvedRecord]) -> str:
                 f"{r.food_name}{grams} ≈{r.kcal:g}千卡({SOURCE_LABEL[r.source]})"
             )
     return "已记录:" + ";".join(parts)
+
+
+# ── 修正/删除(契约②):只落 raw,触发所在聚合增量重算 ─────────────────────
+
+
+class FoodPatch(BaseModel):
+    grams: float | None = None
+    kcal: float | None = None
+
+
+class ExercisePatch(BaseModel):
+    duration_min: float | None = None
+    reps: int | None = None
+    load_kg: float | None = None
+    kcal: float | None = None
+
+
+def _food_desc(rec: FoodRecord) -> str:
+    grams = f"{rec.grams:g}g" if rec.grams else ""
+    return f"{rec.food_name}{grams}≈{rec.kcal:g}千卡"
+
+
+def _exercise_desc(rec: ExerciseRecord) -> str:
+    load = f"{rec.load_kg:g}kg" if rec.load_kg else ""
+    reps = f"×{rec.reps}" if rec.reps else ""
+    return f"{rec.exercise_name}{load}{reps}≈{rec.kcal:g}千卡"
+
+
+async def _learn_correction(user_id: int, was_estimated: bool, content: str) -> None:
+    """纠正即时学:仅当被改/删的是 AI 估算记录(=用户在纠正 AI 的猜测)。"""
+    if was_estimated:
+        await AiMemory.create(user_id=user_id, kind="correction", content=content)
+
+
+async def _bmr_per_min(user_id: int) -> float:
+    """按当前档案+最新体重算每分钟基础消耗(重算运动记录用)。"""
+    user = await User.get(id=user_id)
+    latest = await WeightRecord.filter(user_id=user_id).order_by("-created_at").first()
+    if latest is None:
+        raise HTTPException(409, "该用户没有体重记录,无法重算消耗")
+    bmr = lookup.bmr_kcal_per_day(
+        latest.weight_kg, user.height_cm, user.sex, user.birth_year, timezone.now()
+    )
+    return bmr / 1440
+
+
+@router.patch("/records/food/{record_id}")
+async def patch_food(record_id: int, body: FoodPatch) -> dict:
+    """修正饮食记录:改克数 → 重算热量营养;直接改热量 → 采用用户数。"""
+    rec = await FoodRecord.get_or_none(id=record_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    if body.grams is None and body.kcal is None:
+        raise HTTPException(422, "至少提供 grams 或 kcal 之一")
+    was_estimated = rec.source == "llm_estimated"
+    old_desc = _food_desc(rec)
+
+    if body.grams is not None:
+        item = lookup.find_food(rec.food_name)
+        if item:  # 表内:按新克数全套重算
+            n = lookup.food_nutrition(item, body.grams)
+            rec.kcal = n["kcal"]
+            rec.protein, rec.fat = n["protein"], n["fat"]
+            rec.cho, rec.fiber = n["cho"], n["fiber"]
+        elif rec.grams:  # 表外但有旧克数:整条按比例缩放
+            factor = body.grams / rec.grams
+            rec.kcal = round(rec.kcal * factor, 1)
+            for field in ("protein", "fat", "cho", "fiber"):
+                v = getattr(rec, field)
+                if v is not None:
+                    setattr(rec, field, round(v * factor, 1))
+        else:
+            raise HTTPException(422, "该记录没有克数基准,无法按克数重算,请直接改 kcal")
+        rec.grams = body.grams
+    if body.kcal is not None:  # 直接改热量:采用用户数
+        rec.kcal = body.kcal
+        rec.source = "user_reported"
+    await rec.save()
+
+    await _learn_correction(
+        rec.user_id,
+        was_estimated,
+        f"用户把AI估算的「{old_desc}」修正为「{_food_desc(rec)}」",
+    )
+    meal = await Meal.get_or_none(id=rec.meal_id) if rec.meal_id else None
+    if meal:
+        await aggregate.recompute_meal(meal)
+    return {
+        "type": "food",
+        "id": rec.id,
+        "food_name": rec.food_name,
+        "kcal": rec.kcal,
+        "grams": rec.grams,
+        "protein": rec.protein,
+        "fat": rec.fat,
+        "cho": rec.cho,
+        "fiber": rec.fiber,
+        "source": rec.source,
+        "meal_id": rec.meal_id,
+    }
+
+
+@router.patch("/records/exercise/{record_id}")
+async def patch_exercise(record_id: int, body: ExercisePatch) -> dict:
+    """修正运动记录:改时长 → 按 MET 重算消耗;直接改热量 → 采用用户数;
+    次数/负重是训练进度描述,改动照存不影响消耗。"""
+    rec = await ExerciseRecord.get_or_none(id=record_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    if all(v is None for v in (body.duration_min, body.reps, body.load_kg, body.kcal)):
+        raise HTTPException(422, "至少提供一个要修改的字段")
+    was_estimated = rec.source == "llm_estimated"
+    old_desc = _exercise_desc(rec)
+
+    if body.reps is not None:
+        rec.reps = body.reps
+    if body.load_kg is not None:
+        rec.load_kg = body.load_kg
+    if body.duration_min is not None:
+        if rec.met is None:
+            raise HTTPException(422, "该记录没有 MET 值,无法按时长重算,请直接改 kcal")
+        per_min = await _bmr_per_min(rec.user_id)
+        rec.duration_min = body.duration_min
+        rec.kcal = round(rec.met * per_min * body.duration_min, 1)
+        rec.kcal_net = round((rec.met - 1) * per_min * body.duration_min, 1)
+    if body.kcal is not None:  # 直接改热量:采用用户数
+        rec.kcal = body.kcal
+        rec.source = "user_reported"
+        rec.kcal_net = (
+            round(body.kcal - await _bmr_per_min(rec.user_id) * rec.duration_min, 1)
+            if rec.duration_min
+            else None
+        )
+    await rec.save()
+
+    await _learn_correction(
+        rec.user_id,
+        was_estimated,
+        f"用户把AI估算的「{old_desc}」修正为「{_exercise_desc(rec)}」",
+    )
+    session = await Session.get_or_none(id=rec.session_id) if rec.session_id else None
+    if session:
+        await aggregate.recompute_session(session)
+    return {
+        "type": "exercise",
+        "id": rec.id,
+        "exercise_name": rec.exercise_name,
+        "kcal": rec.kcal,
+        "kcal_net": rec.kcal_net,
+        "duration_min": rec.duration_min,
+        "load_kg": rec.load_kg,
+        "reps": rec.reps,
+        "source": rec.source,
+        "session_id": rec.session_id,
+    }
+
+
+@router.delete("/records/food/{record_id}")
+async def delete_food(record_id: int) -> dict:
+    rec = await FoodRecord.get_or_none(id=record_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    await _learn_correction(
+        rec.user_id,
+        rec.source == "llm_estimated",
+        f"用户删除了AI估算的「{_food_desc(rec)}」(原句:{rec.raw_text})",
+    )
+    meal_id = rec.meal_id
+    await rec.delete()
+    meal = await Meal.get_or_none(id=meal_id) if meal_id else None
+    if meal:
+        await aggregate.recompute_meal(meal)
+    return {"deleted": record_id}
+
+
+@router.delete("/records/exercise/{record_id}")
+async def delete_exercise(record_id: int) -> dict:
+    rec = await ExerciseRecord.get_or_none(id=record_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    await _learn_correction(
+        rec.user_id,
+        rec.source == "llm_estimated",
+        f"用户删除了AI估算的「{_exercise_desc(rec)}」(原句:{rec.raw_text})",
+    )
+    session_id = rec.session_id
+    await rec.delete()
+    session = await Session.get_or_none(id=session_id) if session_id else None
+    if session:
+        await aggregate.recompute_session(session)
+    return {"deleted": record_id}

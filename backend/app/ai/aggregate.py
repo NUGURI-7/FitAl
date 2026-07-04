@@ -85,6 +85,29 @@ async def session_summary(session: Session | None) -> str | None:
     )
 
 
+async def recompute_meal(meal: Meal) -> None:
+    """修正/删除后的增量重算:总热量/起止时间从剩余成员重推;无成员则删组。"""
+    items = await FoodRecord.filter(meal=meal)
+    if not items:
+        await meal.delete()
+        return
+    meal.start = min(i.created_at for i in items)
+    meal.end = max(i.created_at for i in items)
+    meal.kcal_total = round(sum(i.kcal for i in items), 1)
+    await meal.save()
+
+
+async def recompute_session(session: Session) -> None:
+    items = await ExerciseRecord.filter(session=session)
+    if not items:
+        await session.delete()
+        return
+    session.start = min(i.created_at for i in items)
+    session.end = max(i.created_at for i in items)
+    session.kcal_total = round(sum(i.kcal for i in items), 1)
+    await session.save()
+
+
 async def assign_food(
     record: FoodRecord, current: Meal | None, starts_new: bool, name: str = ""
 ) -> Meal:
