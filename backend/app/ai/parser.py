@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
+from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -297,6 +298,8 @@ def _instructions() -> str:
 7. 报次数填 reps,报时长填 duration_min;绝不自行换算。
 8. 陈述当前体重(如"今天75公斤")→ weight 记录。
 9. 复合菜且用户没报食材份量 → 拆解为表内食材,逐条估克重(估克重可以,估热量不行)。
+10. "又一组/再来一组/同上"是对同一组动作的补充说明,整句只输出一条记录:
+    "硬拉100公斤5个又一组" → 仅一条(name=硬拉, load_kg=100, reps=5)。
 
 MET 表({len(lookup.met_items())}条):
 {_met_table_block()}"""
@@ -356,7 +359,9 @@ async def parse_text(
     text: str, *, now: datetime, user_food_names: frozenset[str] = frozenset()
 ) -> ParseOutput:
     """LLM 洗数据入口:一次解析 + 未命中名字的候选重映射(微循环)。"""
-    prefix = f"[当前时间 {now:%Y-%m-%d %H:%M}]"
+    # 存储用 UTC;给 LLM 看的时间转本地时区,否则"中午/晚上"这类语境会错 8 小时
+    local_now = now.astimezone(ZoneInfo(settings.TIMEZONE)) if now.tzinfo else now
+    prefix = f"[当前时间 {local_now:%Y-%m-%d %H:%M}]"
     if user_food_names:
         prefix += f"[用户自定义食物:{'、'.join(sorted(user_food_names))}]"
     result = await parse_agent().run(f"{prefix}\n用户说:{text}", deps=user_food_names)

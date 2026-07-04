@@ -73,8 +73,8 @@ class ExerciseRecord(Model):
     kcal = fields.FloatField()  # 总耗(含同时段基础代谢,市面口径)
     kcal_net = fields.FloatField(null=True)  # 净耗(MET-1 计;自报热量时未知)
     exercise_name = fields.CharField(max_length=64)
-    met = fields.FloatField()
-    duration_min = fields.FloatField()  # 力量组=组动作时间+距上一组间隔(后端推断)
+    met = fields.FloatField(null=True)  # 自报热量的表外运动可能未知
+    duration_min = fields.FloatField(null=True)  # ≤20min 取距上组实际间隔,否则动作时间
     load_kg = fields.FloatField(null=True)
     reps = fields.IntField(null=True)
     # 归属场次由聚合维护;删场次不动 raw
@@ -98,7 +98,7 @@ class FoodRecord(Model):
     )  # user_reported | food_table | llm_estimated
     kcal = fields.FloatField()
     food_name = fields.CharField(max_length=64)
-    grams = fields.FloatField()
+    grams = fields.FloatField(null=True)  # 自定义食物按"份"记时可空
     protein = fields.FloatField(null=True)
     fat = fields.FloatField(null=True)
     cho = fields.FloatField(null=True)

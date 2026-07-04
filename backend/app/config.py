@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     PG_PASSWORD: str = ""
     PG_DATABASE: str = "fital"
 
+    # ==================== 时区(展示/给 LLM 的本地时间;存储一律 UTC)====================
+    TIMEZONE: str = "Asia/Shanghai"
+
     # ==================== LLM(任意 OpenAI 兼容端点)====================
     LLM_BASE_URL: str = "https://api.deepseek.com"
     LLM_MODEL: str = "deepseek-v4-flash"

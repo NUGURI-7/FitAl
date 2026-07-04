@@ -20,6 +20,7 @@ TORTOISE_ORM = {
             "migrations": "app.migrations",
         },
     },
-    "use_tz": False,
-    "timezone": "Asia/Shanghai",
+    # 存储一律 aware UTC(timestamptz);本地时间只在展示/注入 prompt 时转换
+    "use_tz": True,
+    "timezone": settings.TIMEZONE,
 }

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.models import FoodRecord, Meal, User
 
@@ -10,8 +10,8 @@ async def test_七张表模型_可建用户与饮食记录并归入餐次(db):
     meal = await Meal.create(
         user=user,
         name="午餐",
-        start=datetime(2026, 7, 2, 12, 3),
-        end=datetime(2026, 7, 2, 12, 6),
+        start=datetime(2026, 7, 2, 12, 3, tzinfo=UTC),
+        end=datetime(2026, 7, 2, 12, 6, tzinfo=UTC),
         kcal_total=371,
     )
     await FoodRecord.create(
@@ -44,8 +44,8 @@ async def test_删除餐次_raw记录保留仅解除归属(db):
     )
     meal = await Meal.create(
         user=user,
-        start=datetime(2026, 7, 2, 12, 0),
-        end=datetime(2026, 7, 2, 12, 0),
+        start=datetime(2026, 7, 2, 12, 0, tzinfo=UTC),
+        end=datetime(2026, 7, 2, 12, 0, tzinfo=UTC),
     )
     record = await FoodRecord.create(
         user=user,

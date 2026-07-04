@@ -41,6 +41,7 @@
 8. **数据库迁移用 Tortoise 内置迁移系统**(`tortoise init / makemigrations / migrate`);不依赖 generate_schemas 自动建表
 9. **LLM 选型**(2026-07-03 用户扩定为通用接入):PydanticAI + **任意 OpenAI 兼容端点**,不绑定单一供应商。`.env` 四项:`LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`(**允许空**,兼容无鉴权本地部署)/ `LLM_EXTRA_BODY`(端点私有参数 JSON,可空)。当前默认 deepseek-v4-flash(需 `{"thinking":{"type":"disabled"}}` 关思考模式才能用结构化输出;旧 deepseek-chat 2026/07/24 弃用勿选)。换端点只改 `.env` 不改代码
    - 程序内语音输入(流式 STT,WebSocket,不做整段往返)与模型设置界面(LLM/语音两个模型可配)排在前端阶段,后端当前不实现
+   - **不做思考过程展示**(2026-07-04 用户定):写路径思考模式必须关(与结构化输出冲突),回复为模板拼接;将来有真实需求再议
 
 ## 目录结构
 
