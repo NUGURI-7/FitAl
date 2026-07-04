@@ -38,6 +38,20 @@ def test_优先级3_静态表按克重计算():
     assert r.protein == pytest.approx(49.2)
 
 
+def test_起名与归组判断穿透到解析结果():
+    [f, e] = _build(
+        [
+            ParsedFood(name="鸡胸脯肉", grams=200, group_name="鸡胸肉午餐"),
+            ParsedExercise(
+                name="卧推", reps=10, starts_new_group=True, group_name="晚间胸部训练"
+            ),
+        ]
+    )
+    assert f.group_name == "鸡胸肉午餐"
+    assert e.starts_new_group is True
+    assert e.group_name == "晚间胸部训练"
+
+
 def test_优先级4_表外食物用估算兜底():
     [r] = _build([ParsedFood(name="楼下的猪脚饭", grams=400, est_kcal=850)])
     assert r.source == "llm_estimated"

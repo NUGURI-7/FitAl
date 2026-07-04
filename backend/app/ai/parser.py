@@ -67,6 +67,7 @@ class ResolvedExercise:
     load_kg: float | None
     reps: int | None
     starts_new_group: bool = False  # AI 的归组判断:新开一场还是延续当前
+    group_name: str = ""  # AI 给所在场次起的展示名,空则聚合时走时段兜底
 
 
 @dataclass
@@ -80,6 +81,7 @@ class ResolvedFood:
     cho: float | None
     fiber: float | None
     starts_new_group: bool = False  # AI 的归组判断:新开一顿还是延续当前
+    group_name: str = ""  # AI 给所在餐次起的展示名,空则聚合时走时段兜底
 
 
 @dataclass
@@ -169,6 +171,7 @@ def _resolve_exercise(
         load_kg=p.load_kg,
         reps=p.reps,
         starts_new_group=p.starts_new_group,
+        group_name=p.group_name,
     )
 
 
@@ -190,6 +193,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             source="llm_estimated",
             kcal=kcal,
             grams=grams,
+            group_name=p.group_name,
             protein=nutrition["protein"] if nutrition else None,
             fat=nutrition["fat"] if nutrition else None,
             cho=nutrition["cho"] if nutrition else None,
@@ -204,6 +208,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             p.grams,
             nutrition,
             p.starts_new_group,
+            p.group_name,
         )
 
     uf = user_foods.get(p.name)
@@ -216,6 +221,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             kcal=round(uf.kcal * units, 1),
             grams=p.grams,
             starts_new_group=p.starts_new_group,
+            group_name=p.group_name,
             protein=scale(uf.protein),
             fat=scale(uf.fat),
             cho=scale(uf.cho),
@@ -230,18 +236,25 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             p.grams,
             nutrition,
             p.starts_new_group,
+            p.group_name,
         )
 
     if p.est_kcal is not None:  # 优先级4:估算兜底
         return _food_record(
-            p.name, "llm_estimated", p.est_kcal, p.grams, None, p.starts_new_group
+            p.name,
+            "llm_estimated",
+            p.est_kcal,
+            p.grams,
+            None,
+            p.starts_new_group,
+            p.group_name,
         )
 
     raise ValueError(f"{p.name}: 查表未命中且无估算值")
 
 
 def _food_record(
-    name, source, kcal, grams, nutrition, starts_new=False
+    name, source, kcal, grams, nutrition, starts_new=False, group_name=""
 ) -> ResolvedFood:
     return ResolvedFood(
         food_name=name,
@@ -249,6 +262,7 @@ def _food_record(
         kcal=kcal,
         grams=grams,
         starts_new_group=starts_new,
+        group_name=group_name,
         protein=nutrition["protein"] if nutrition else None,
         fat=nutrition["fat"] if nutrition else None,
         cho=nutrition["cho"] if nutrition else None,
@@ -322,6 +336,8 @@ def _instructions() -> str:
 11. 归组判断:消息可能附带[当前餐次]/[当前训练场次](当天最近一组的时间与内容)。
     对每条 food/exercise 结合当前时间和内容常识判断:延续它 → starts_new_group=false;
     是新的一顿饭/新一场训练 → starts_new_group=true。没附带当前组信息时此字段无效。
+12. 起名:每条 food/exercise 都填 group_name——该记录所归入的一顿/一场的展示名
+    (2~8字,按内容与时段起);延续已有组时结合组内已含内容给更贴切的名字。
 
 MET 表({len(lookup.met_items())}条):
 {_met_table_block()}"""

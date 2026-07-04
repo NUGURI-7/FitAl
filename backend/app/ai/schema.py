@@ -31,6 +31,10 @@ class ParsedExercise(BaseModel):
         False,
         description="归组判断:延续消息中给出的[当前训练场次]填 false;是新一场训练填 true",
     )
+    group_name: str = Field(
+        "",
+        description='该记录所在训练场次的展示名(2~8字,按内容与时段起,如"晚间胸部训练");延续已有场次时结合已含内容给更贴切的名字',
+    )
 
 
 class ParsedFood(BaseModel):
@@ -48,6 +52,10 @@ class ParsedFood(BaseModel):
     starts_new_group: bool = Field(
         False,
         description="归组判断:延续消息中给出的[当前餐次]填 false;是新的一顿饭填 true",
+    )
+    group_name: str = Field(
+        "",
+        description='该记录所在一顿饭的展示名(2~8字,按内容与时段起,如"早餐""鸡胸肉午餐");延续已有餐次时结合已含内容给更贴切的名字',
     )
 
 

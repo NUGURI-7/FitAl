@@ -107,3 +107,57 @@ async def test_餐次摘要含内容与热量(db):
     text = await aggregate.meal_summary(meal)
     assert "米饭(蒸,代表值)" in text
     assert "174" in text
+
+
+async def test_AI起名写入新开的组(db):
+    user = await _user()
+    meal = await aggregate.assign_food(
+        await _food(user, _utc(7, 3, 4, 0)), None, False, name="鸡胸肉午餐"
+    )
+    assert meal.name == "鸡胸肉午餐"
+
+
+async def test_延续组时AI新名覆盖旧名(db):
+    user = await _user()
+    m1 = await aggregate.assign_food(
+        await _food(user, _utc(7, 3, 4, 0)), None, False, name="午餐"
+    )
+    m2 = await aggregate.assign_food(
+        await _food(user, _utc(7, 3, 4, 30)), m1, False, name="鸡胸肉米饭午餐"
+    )
+    assert m2.id == m1.id
+    assert m2.name == "鸡胸肉米饭午餐"
+
+
+async def test_AI没给名_按开始时间时段兜底(db):
+    # UTC 04:00 = 本地(上海)12:00 → 午餐
+    user = await _user()
+    meal = await aggregate.assign_food(await _food(user, _utc(7, 3, 4, 0)), None, False)
+    assert meal.name == "午餐"
+
+
+async def test_兜底不覆盖已有名(db):
+    user = await _user()
+    m1 = await aggregate.assign_food(
+        await _food(user, _utc(7, 3, 4, 0)), None, False, name="工作餐"
+    )
+    m2 = await aggregate.assign_food(await _food(user, _utc(7, 3, 4, 30)), m1, False)
+    assert m2.name == "工作餐"
+
+
+async def test_场次时段兜底(db):
+    # UTC 11:00 = 本地 19:00 → 晚间训练
+    user = await _user()
+    session = await aggregate.assign_exercise(
+        await _exercise(user, _utc(7, 3, 11, 0)), None, False
+    )
+    assert session.name == "晚间训练"
+
+
+async def test_摘要携带组名供AI参考(db):
+    user = await _user()
+    meal = await aggregate.assign_food(
+        await _food(user, _utc(7, 3, 4, 0)), None, False, name="午餐"
+    )
+    text = await aggregate.meal_summary(meal)
+    assert "「午餐」" in text

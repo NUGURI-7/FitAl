@@ -16,6 +16,31 @@ def _local_day_start_utc(now: datetime) -> datetime:
     return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
 
+def fallback_meal_name(start: datetime) -> str:
+    """AI 没给名时的兜底:按开始时间(本地时区)套时段名。"""
+    hour = start.astimezone(ZoneInfo(settings.TIMEZONE)).hour
+    if 5 <= hour < 10:
+        return "早餐"
+    if 10 <= hour < 15:
+        return "午餐"
+    if 15 <= hour < 17:
+        return "下午加餐"
+    if 17 <= hour < 22:
+        return "晚餐"
+    return "夜宵"
+
+
+def fallback_session_name(start: datetime) -> str:
+    hour = start.astimezone(ZoneInfo(settings.TIMEZONE)).hour
+    if 5 <= hour < 12:
+        return "上午训练"
+    if 12 <= hour < 18:
+        return "下午训练"
+    if 18 <= hour <= 23:
+        return "晚间训练"
+    return "凌晨训练"
+
+
 async def open_meal(user: User, now: datetime) -> Meal | None:
     """当天最近一顿;跨天不延续(隔夜必然是新的一顿,无需 AI 判断)。"""
     return (
@@ -39,8 +64,9 @@ async def meal_summary(meal: Meal | None) -> str | None:
         return None
     items = await FoodRecord.filter(meal=meal).values_list("food_name", flat=True)
     tz = ZoneInfo(settings.TIMEZONE)
+    label = f"「{meal.name}」" if meal.name else ""
     return (
-        f"{meal.start.astimezone(tz):%H:%M}-{meal.end.astimezone(tz):%H:%M} "
+        f"{label}{meal.start.astimezone(tz):%H:%M}-{meal.end.astimezone(tz):%H:%M} "
         f"已含 {'、'.join(items) or '空'},共{meal.kcal_total:g}千卡"
     )
 
@@ -52,16 +78,17 @@ async def session_summary(session: Session | None) -> str | None:
         "exercise_name", flat=True
     )
     tz = ZoneInfo(settings.TIMEZONE)
+    label = f"「{session.name}」" if session.name else ""
     return (
-        f"{session.start.astimezone(tz):%H:%M}-{session.end.astimezone(tz):%H:%M} "
+        f"{label}{session.start.astimezone(tz):%H:%M}-{session.end.astimezone(tz):%H:%M} "
         f"已含 {'、'.join(items) or '空'},共{session.kcal_total:g}千卡"
     )
 
 
 async def assign_food(
-    record: FoodRecord, current: Meal | None, starts_new: bool
+    record: FoodRecord, current: Meal | None, starts_new: bool, name: str = ""
 ) -> Meal:
-    """执行 AI 的归组判断:延续 current 或新开一顿。"""
+    """执行 AI 的归组判断:延续 current 或新开一顿;name=AI 起的名,空则时段兜底。"""
     if current is None or starts_new:
         current = await Meal.create(
             user_id=record.user_id,
@@ -69,6 +96,10 @@ async def assign_food(
             end=record.created_at,
             kcal_total=0,
         )
+    if name:
+        current.name = name[:64]
+    elif not current.name:
+        current.name = fallback_meal_name(current.start)
     current.end = max(current.end, record.created_at)
     current.kcal_total = round(current.kcal_total + record.kcal, 1)
     await current.save()
@@ -78,7 +109,7 @@ async def assign_food(
 
 
 async def assign_exercise(
-    record: ExerciseRecord, current: Session | None, starts_new: bool
+    record: ExerciseRecord, current: Session | None, starts_new: bool, name: str = ""
 ) -> Session:
     if current is None or starts_new:
         current = await Session.create(
@@ -87,6 +118,10 @@ async def assign_exercise(
             end=record.created_at,
             kcal_total=0,
         )
+    if name:
+        current.name = name[:64]
+    elif not current.name:
+        current.name = fallback_session_name(current.start)
     current.end = max(current.end, record.created_at)
     current.kcal_total = round(current.kcal_total + record.kcal, 1)
     await current.save()

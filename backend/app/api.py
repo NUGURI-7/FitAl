@@ -132,7 +132,7 @@ async def persist_records(
                 reps=r.reps,
             )
             current_session = await aggregate.assign_exercise(
-                rec, current_session, r.starts_new_group
+                rec, current_session, r.starts_new_group, r.group_name
             )
             session = current_session
             cards.append(
@@ -147,6 +147,7 @@ async def persist_records(
                     "reps": rec.reps,
                     "source": rec.source,
                     "session_id": session.id,
+                    "session_name": session.name,
                     "created_at": rec.created_at.isoformat(),
                 }
             )
@@ -164,7 +165,7 @@ async def persist_records(
                 fiber=r.fiber,
             )
             current_meal = await aggregate.assign_food(
-                rec, current_meal, r.starts_new_group
+                rec, current_meal, r.starts_new_group, r.group_name
             )
             meal = current_meal
             cards.append(
@@ -180,6 +181,7 @@ async def persist_records(
                     "fiber": rec.fiber,
                     "source": rec.source,
                     "meal_id": meal.id,
+                    "meal_name": meal.name,
                     "created_at": rec.created_at.isoformat(),
                 }
             )
