@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -6,7 +7,17 @@ from pydantic import BaseModel, Field
 from tortoise import Tortoise, timezone
 
 from app.ai import aggregate, parser
-from app.models import ExerciseRecord, FoodRecord, User, UserFood, WeightRecord
+from app.ai.schema import ParsedMemory, ParsedUserFoodDef
+from app.models import (
+    AiMemory,
+    ExerciseRecord,
+    FoodRecord,
+    User,
+    UserFood,
+    WeightRecord,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -67,6 +78,7 @@ async def chat(body: ChatIn) -> StreamingResponse:
 
     current_meal = await aggregate.open_meal(user, now)
     current_session = await aggregate.open_session(user, now)
+    memory_rows = await AiMemory.filter(user=user).order_by("updated_at")
 
     parsed = await parser.parse_text(
         body.text,
@@ -74,6 +86,7 @@ async def chat(body: ChatIn) -> StreamingResponse:
         user_food_names=frozenset(user_foods),
         open_meal=await aggregate.meal_summary(current_meal),
         open_session=await aggregate.session_summary(current_session),
+        memories=";".join(r.content for r in memory_rows) or None,
     )
     resolved = parser.build_records(
         parsed,
@@ -90,12 +103,34 @@ async def chat(body: ChatIn) -> StreamingResponse:
     async def stream():
         yield _sse("records", cards)
         yield _sse("reply", {"text": reply})
+        # 回执已发完,趁连接收尾顺带做每日巩固(最佳努力,不增加用户等待)
+        await maybe_consolidate_memories(user, now, memory_rows)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 def _sse(event: str, data) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def maybe_consolidate_memories(user: User, now, rows: list[AiMemory]) -> None:
+    """每日首次请求顺带巩固记忆:全部条目今天以前动过才触发,一天至多一次。
+
+    最佳努力:LLM 失败静默跳过,绝不影响主链路;AI 返回空清单不执行整层替换(防误删)。
+    """
+    day_start = aggregate.local_day_start_utc(now)
+    if len(rows) < 2 or any(r.updated_at >= day_start for r in rows):
+        return
+    try:
+        merged = await parser.consolidate_memories([(r.kind, r.content) for r in rows])
+    except Exception:
+        logger.warning("记忆巩固失败,跳过", exc_info=True)
+        return
+    if not merged:
+        return
+    await AiMemory.filter(user=user).delete()
+    for m in merged:
+        await AiMemory.create(user=user, kind=m.kind, content=m.content)
 
 
 async def persist_records(
@@ -116,6 +151,38 @@ async def persist_records(
                     "id": rec.id,
                     "weight_kg": rec.weight_kg,
                     "created_at": rec.created_at.isoformat(),
+                }
+            )
+        elif isinstance(r, ParsedUserFoodDef):
+            rec, _ = await UserFood.update_or_create(  # 重复"记住"=更新定义
+                user=user,
+                name=r.name,
+                defaults={
+                    "unit": r.unit,
+                    "kcal": r.kcal,
+                    "protein": r.protein,
+                    "fat": r.fat,
+                    "cho": r.cho,
+                    "fiber": r.fiber,
+                },
+            )
+            cards.append(
+                {
+                    "type": "user_food",
+                    "id": rec.id,
+                    "name": rec.name,
+                    "unit": rec.unit,
+                    "kcal": rec.kcal,
+                }
+            )
+        elif isinstance(r, ParsedMemory):
+            rec = await AiMemory.create(user=user, kind=r.kind, content=r.content)
+            cards.append(
+                {
+                    "type": "memory",
+                    "id": rec.id,
+                    "kind": rec.kind,
+                    "content": rec.content,
                 }
             )
         elif isinstance(r, parser.ResolvedExercise):
@@ -196,6 +263,10 @@ def compose_reply(resolved: list[parser.ResolvedRecord]) -> str:
     for r in resolved:
         if isinstance(r, parser.ResolvedWeight):
             parts.append(f"体重 {r.weight_kg:g}kg")
+        elif isinstance(r, ParsedUserFoodDef):
+            parts.append(f"记住了 {r.name}(每{r.unit}{r.kcal:g}千卡)")
+        elif isinstance(r, ParsedMemory):
+            parts.append(f"记住了:{r.content}")
         elif isinstance(r, parser.ResolvedExercise):
             load = f" {r.load_kg:g}kg" if r.load_kg else ""
             reps = f"×{r.reps}" if r.reps else ""

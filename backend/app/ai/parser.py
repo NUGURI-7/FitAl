@@ -19,9 +19,13 @@ from pydantic_ai.settings import ModelSettings
 
 from app.ai import lookup
 from app.ai.schema import (
+    ConsolidatedMemories,
+    MemoryItem,
     NameRemap,
     ParsedExercise,
     ParsedFood,
+    ParsedMemory,
+    ParsedUserFoodDef,
     ParsedWeight,
     ParseOutput,
 )
@@ -89,7 +93,10 @@ class ResolvedWeight:
     weight_kg: float
 
 
-ResolvedRecord = ResolvedExercise | ResolvedFood | ResolvedWeight
+# 记忆类条目无任何计算,解析后原样进入落库环节
+ResolvedRecord = (
+    ResolvedExercise | ResolvedFood | ResolvedWeight | ParsedUserFoodDef | ParsedMemory
+)
 
 
 # ── 确定性后处理:解析结果 → 可入库记录(纯函数) ─────────────────────────
@@ -113,6 +120,8 @@ def build_records(
         elif isinstance(item, ParsedExercise):
             records.append(_resolve_exercise(item, bmr, now, last_exercise_at))
             last_exercise_at = now  # 同一句里的多组按顺序衔接
+        elif isinstance(item, ParsedUserFoodDef | ParsedMemory):
+            records.append(item)  # 无计算,原样落库
         else:
             records.append(_resolve_food(item, user_foods or {}))
     return records
@@ -338,6 +347,10 @@ def _instructions() -> str:
     是新的一顿饭/新一场训练 → starts_new_group=true。没附带当前组信息时此字段无效。
 12. 起名:每条 food/exercise 都填 group_name——该记录所归入的一顿/一场的展示名
     (2~8字,按内容与时段起);延续已有组时结合组内已含内容给更贴切的名字。
+13. "记住……"类指令:定义自己的食物(名称+每份热量)→ 输出 user_food_def 条目;
+    叫法对应("我说X指的是Y")→ memory 条目(kind=alias);习惯/长期事实 → memory
+    条目(kind=habit)。这类话本身不产生 food/exercise 记录,除非用户同时说这次吃了/练了。
+14. 消息可能附带[用户记忆](该用户积累的叫法与习惯),解析时优先按记忆理解用户的话。
 
 MET 表({len(lookup.met_items())}条):
 {_met_table_block()}"""
@@ -393,6 +406,28 @@ def remap_agent() -> Agent:
     )
 
 
+@lru_cache(maxsize=1)
+def consolidate_agent() -> Agent:
+    return Agent(
+        _model(),
+        output_type=ConsolidatedMemories,
+        instructions=(
+            "你负责整理一个用户的记忆清单(叫法对应/习惯/纠正)。"
+            "合并重复或矛盾的条目(矛盾时保留较新的,清单按时间先后给出),"
+            "每条改写为自包含的一句话;仍然有效的必须保留,不得凭空新增。"
+        ),
+        retries=2,
+        model_settings=_model_settings(),
+    )
+
+
+async def consolidate_memories(rows: list[tuple[str, str]]) -> list[MemoryItem]:
+    """每日巩固:传入 (kind, content) 全量,返回合并后的新全量。调用方负责整层替换。"""
+    listing = "\n".join(f"[{kind}] {content}" for kind, content in rows)
+    result = await consolidate_agent().run(f"现有记忆(从旧到新):\n{listing}")
+    return result.output.memories
+
+
 async def parse_text(
     text: str,
     *,
@@ -400,10 +435,12 @@ async def parse_text(
     user_food_names: frozenset[str] = frozenset(),
     open_meal: str | None = None,
     open_session: str | None = None,
+    memories: str | None = None,
 ) -> ParseOutput:
     """LLM 洗数据入口:一次解析 + 未命中名字的候选重映射(微循环)。
 
     open_meal/open_session:当天最近一顿/一场的摘要,AI 据此判断归组(无阈值常量)。
+    memories:该用户全部记忆拼成的一段文本(量小,全量注入,不做检索)。
     """
     # 存储用 UTC;给 LLM 看的时间转本地时区,否则"中午/晚上"这类语境会错 8 小时
     local_now = now.astimezone(ZoneInfo(settings.TIMEZONE)) if now.tzinfo else now
@@ -414,6 +451,8 @@ async def parse_text(
         prefix += f"[当前训练场次:{open_session}]"
     if user_food_names:
         prefix += f"[用户自定义食物:{'、'.join(sorted(user_food_names))}]"
+    if memories:
+        prefix += f"[用户记忆:{memories}]"
     result = await parse_agent().run(f"{prefix}\n用户说:{text}", deps=user_food_names)
     output = result.output
 

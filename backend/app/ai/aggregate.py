@@ -11,7 +11,7 @@ from app.config import settings
 from app.models import ExerciseRecord, FoodRecord, Meal, Session, User
 
 
-def _local_day_start_utc(now: datetime) -> datetime:
+def local_day_start_utc(now: datetime) -> datetime:
     local = now.astimezone(ZoneInfo(settings.TIMEZONE))
     return local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
@@ -44,7 +44,7 @@ def fallback_session_name(start: datetime) -> str:
 async def open_meal(user: User, now: datetime) -> Meal | None:
     """当天最近一顿;跨天不延续(隔夜必然是新的一顿,无需 AI 判断)。"""
     return (
-        await Meal.filter(user=user, end__gte=_local_day_start_utc(now))
+        await Meal.filter(user=user, end__gte=local_day_start_utc(now))
         .order_by("-end")
         .first()
     )
@@ -52,7 +52,7 @@ async def open_meal(user: User, now: datetime) -> Meal | None:
 
 async def open_session(user: User, now: datetime) -> Session | None:
     return (
-        await Session.filter(user=user, end__gte=_local_day_start_utc(now))
+        await Session.filter(user=user, end__gte=local_day_start_utc(now))
         .order_by("-end")
         .first()
     )

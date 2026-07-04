@@ -64,8 +64,32 @@ class ParsedWeight(BaseModel):
     weight_kg: float
 
 
+class ParsedUserFoodDef(BaseModel):
+    """用户说"记住……"定义自己的食物(按份)→ user_foods 表,查表优先级高于标准表。"""
+
+    type: Literal["user_food_def"] = "user_food_def"
+    name: str = Field(description="用户对这个食物的叫法,原样保留")
+    unit: str = Field("份", description='计量单位:份/勺/碗/个等,用户没说填"份"')
+    kcal: float = Field(description="每单位热量,用户报的数原样填")
+    protein: float | None = Field(None, description="每单位蛋白质克数,没报不填")
+    fat: float | None = Field(None, description="每单位脂肪克数,没报不填")
+    cho: float | None = Field(None, description="每单位碳水克数,没报不填")
+    fiber: float | None = Field(None, description="每单位纤维克数,没报不填")
+
+
+class ParsedMemory(BaseModel):
+    """用户要求记住的叫法/习惯 → ai_memories 表,解析时注入 prompt。"""
+
+    type: Literal["memory"] = "memory"
+    kind: Literal["alias", "habit"] = Field(
+        description="alias=叫法对应(我说X指的是Y);habit=习惯或长期事实"
+    )
+    content: str = Field(description="一句话陈述要记住的内容,自包含、无上下文也能懂")
+
+
 ParsedItem = Annotated[
-    ParsedExercise | ParsedFood | ParsedWeight, Field(discriminator="type")
+    ParsedExercise | ParsedFood | ParsedWeight | ParsedUserFoodDef | ParsedMemory,
+    Field(discriminator="type"),
 ]
 
 
@@ -77,3 +101,14 @@ class NameRemap(BaseModel):
     """微循环第二轮:未命中的名字 → 从候选里挑标准名,挑不出给 null。"""
 
     mapping: dict[str, str | None]
+
+
+class MemoryItem(BaseModel):
+    kind: Literal["alias", "habit", "correction"]
+    content: str
+
+
+class ConsolidatedMemories(BaseModel):
+    """每日巩固:输入现有记忆全量,输出合并去重后的新全量(整层替换)。"""
+
+    memories: list[MemoryItem]
