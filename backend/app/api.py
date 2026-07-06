@@ -1,5 +1,7 @@
 import json
 import logging
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -8,6 +10,7 @@ from tortoise import Tortoise, timezone
 
 from app.ai import aggregate, lookup, parser
 from app.ai.schema import ParsedMemory, ParsedUserFoodDef
+from app.config import settings
 from app.models import (
     AiMemory,
     ExerciseRecord,
@@ -472,3 +475,120 @@ async def delete_exercise(record_id: int) -> dict:
     if session:
         await aggregate.recompute_session(session)
     return {"deleted": record_id}
+
+
+# ── 展示接口(契约③④):只读 new 层,零 AI 调用 ─────────────────────────────
+
+
+def _local_day_range_utc(day: date) -> tuple[datetime, datetime]:
+    """本地日历日 → UTC 起止区间;顿/场归属按开始时间落在哪天算。"""
+    start = datetime(
+        day.year, day.month, day.day, tzinfo=ZoneInfo(settings.TIMEZONE)
+    ).astimezone(UTC)
+    return start, start + timedelta(days=1)
+
+
+@router.get("/days/{day}")
+async def day_summary(day: date, user_id: int) -> dict:
+    """某天汇总:摄入/消耗直接读聚合层合计;当天没称重则体重为空,不沿用旧值。"""
+    if await User.get_or_none(id=user_id) is None:
+        raise HTTPException(404, "用户不存在")
+    start, end = _local_day_range_utc(day)
+
+    meals = await Meal.filter(
+        user_id=user_id, start__gte=start, start__lt=end
+    ).order_by("start")
+    sessions = await Session.filter(
+        user_id=user_id, start__gte=start, start__lt=end
+    ).order_by("start")
+    weight = (
+        await WeightRecord.filter(
+            user_id=user_id, created_at__gte=start, created_at__lt=end
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+    meals_out = []
+    for m in meals:
+        items = await FoodRecord.filter(meal=m).order_by("created_at")
+        meals_out.append(
+            {
+                "id": m.id,
+                "name": m.name,
+                "start": m.start.isoformat(),
+                "end": m.end.isoformat(),
+                "kcal_total": m.kcal_total,
+                "items": [
+                    {
+                        "id": i.id,
+                        "food_name": i.food_name,
+                        "kcal": i.kcal,
+                        "grams": i.grams,
+                        "protein": i.protein,
+                        "fat": i.fat,
+                        "cho": i.cho,
+                        "fiber": i.fiber,
+                        "source": i.source,
+                        "created_at": i.created_at.isoformat(),
+                    }
+                    for i in items
+                ],
+            }
+        )
+    sessions_out = []
+    for s in sessions:
+        items = await ExerciseRecord.filter(session=s).order_by("created_at")
+        sessions_out.append(
+            {
+                "id": s.id,
+                "name": s.name,
+                "start": s.start.isoformat(),
+                "end": s.end.isoformat(),
+                "kcal_total": s.kcal_total,
+                "items": [
+                    {
+                        "id": i.id,
+                        "exercise_name": i.exercise_name,
+                        "kcal": i.kcal,
+                        "kcal_net": i.kcal_net,
+                        "duration_min": i.duration_min,
+                        "load_kg": i.load_kg,
+                        "reps": i.reps,
+                        "source": i.source,
+                        "created_at": i.created_at.isoformat(),
+                    }
+                    for i in items
+                ],
+            }
+        )
+    return {
+        "date": day.isoformat(),
+        "intake_kcal": round(sum(m.kcal_total for m in meals), 1),
+        "burn_kcal": round(sum(s.kcal_total for s in sessions), 1),
+        "weight": weight.weight_kg if weight else None,
+        "meals": meals_out,
+        "sessions": sessions_out,
+    }
+
+
+@router.get("/weights")
+async def weight_curve(user_id: int, days: int = 30) -> dict:
+    """体重曲线:近 N 天全部记录,从早到晚。"""
+    if await User.get_or_none(id=user_id) is None:
+        raise HTTPException(404, "用户不存在")
+    since = timezone.now() - timedelta(days=days)
+    rows = await WeightRecord.filter(user_id=user_id, created_at__gte=since).order_by(
+        "created_at"
+    )
+    return {
+        "days": days,
+        "weights": [
+            {
+                "id": r.id,
+                "weight_kg": r.weight_kg,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ],
+    }
