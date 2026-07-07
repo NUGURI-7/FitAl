@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/* ── FitAl 主题:纸感暖底 + 墨色文字 + 食/练/重三色 ─────────────────────── */
+@theme {
+  --color-paper: #f4f2ed;
+  --color-card: #ffffff;
+  --color-ink: #26231d;
+  --color-ink-soft: #8d877b;
+  --color-hairline: #e8e4da;
+
+  --color-intake: #3a7350; /* 摄入·松绿 */
+  --color-intake-soft: #e9f1ea;
+  --color-burn: #d4551f; /* 消耗·柿橙 */
+  --color-burn-soft: #fbece3;
+  --color-steel: #40679b; /* 体重·墨蓝 */
+  --color-steel-soft: #e9eff7;
+  --color-note: #a86a0c; /* AI 估算·琥珀 */
+  --color-note-soft: #fdf3df;
+
+  --font-sans:
+    -apple-system, "SF Pro Text", "PingFang SC", "Helvetica Neue",
+    "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 数字统一等宽,汇总/卡片上的热量数不跳动 */
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* 进场:卡片依次浮起 */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* 明细展开 */
+@keyframes unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.unfold {
+  animation: unfold 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
