@@ -38,6 +38,10 @@ export interface Group {
 export interface DaySummary {
   intakeKcal: number;
   burnKcal: number;
+  /** 全天基础代谢(该日结束前最近体重+档案算);从未称重为空 */
+  bmrKcal: number | null;
+  /** 当天运动净耗合计(净摄入公式用,避免与基础代谢重复扣) */
+  burnNetKcal: number;
   weightKg: number | null;
   groups: Group[];
 }

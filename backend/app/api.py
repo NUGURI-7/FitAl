@@ -490,8 +490,15 @@ def _local_day_range_utc(day: date) -> tuple[datetime, datetime]:
 
 @router.get("/days/{day}")
 async def day_summary(day: date, user_id: int) -> dict:
-    """某天汇总:摄入/消耗直接读聚合层合计;当天没称重则体重为空,不沿用旧值。"""
-    if await User.get_or_none(id=user_id) is None:
+    """某天汇总:摄入/消耗直接读聚合层合计;当天没称重则体重为空,不沿用旧值。
+
+    另给两个能量平衡用的数(前端算净摄入):
+    - bmr_kcal:全天基础代谢,按该日结束前最近一次体重+档案算;没称过体重为空
+    - burn_net_kcal:当天运动净耗合计(总耗含运动时段基础代谢,直接与全天基础代谢
+      相加会重复扣,故用净耗;个别记录净耗未知时按总耗计)
+    """
+    user = await User.get_or_none(id=user_id)
+    if user is None:
         raise HTTPException(404, "用户不存在")
     start, end = _local_day_range_utc(day)
 
@@ -507,6 +514,18 @@ async def day_summary(day: date, user_id: int) -> dict:
         )
         .order_by("-created_at")
         .first()
+    )
+    latest_weight = (
+        await WeightRecord.filter(user_id=user_id, created_at__lt=end)
+        .order_by("-created_at")
+        .first()
+    )
+    bmr = (
+        lookup.bmr_kcal_per_day(
+            latest_weight.weight_kg, user.height_cm, user.sex, user.birth_year, end
+        )
+        if latest_weight
+        else None
     )
 
     meals_out = []
@@ -537,8 +556,10 @@ async def day_summary(day: date, user_id: int) -> dict:
             }
         )
     sessions_out = []
+    burn_net = 0.0
     for s in sessions:
         items = await ExerciseRecord.filter(session=s).order_by("created_at")
+        burn_net += sum(i.kcal_net if i.kcal_net is not None else i.kcal for i in items)
         sessions_out.append(
             {
                 "id": s.id,
@@ -566,6 +587,8 @@ async def day_summary(day: date, user_id: int) -> dict:
         "date": day.isoformat(),
         "intake_kcal": round(sum(m.kcal_total for m in meals), 1),
         "burn_kcal": round(sum(s.kcal_total for s in sessions), 1),
+        "bmr_kcal": round(bmr, 1) if bmr is not None else None,
+        "burn_net_kcal": round(burn_net, 1),
         "weight": weight.weight_kg if weight else None,
         "meals": meals_out,
         "sessions": sessions_out,

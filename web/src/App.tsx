@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dumbbell, NotebookPen, UtensilsCrossed } from "lucide-react";
-import { fetchDay, sendChat } from "@/api";
+import { fetchDay, fetchWeights, sendChat, type WeightPoint } from "@/api";
 import { GroupCard } from "@/components/GroupCard";
+import { Hero } from "@/components/Hero";
 import { InputBar } from "@/components/InputBar";
 import { ItemSheet } from "@/components/ItemSheet";
 import { TopBar } from "@/components/TopBar";
@@ -89,6 +90,7 @@ function Section({
 function App() {
   const [date, setDate] = useState(() => new Date());
   const [day, setDay] = useState<DaySummary | null>(null);
+  const [weights, setWeights] = useState<WeightPoint[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -122,6 +124,11 @@ function App() {
     load(date);
   }, [date, load]);
 
+  const loadWeights = useCallback(() => {
+    fetchWeights().then(setWeights).catch(() => setWeights(null));
+  }, []);
+  useEffect(loadWeights, [loadWeights]);
+
   const handleSend = async (text: string): Promise<boolean> => {
     setSending(true);
     try {
@@ -130,6 +137,7 @@ function App() {
       // 记录永远落在"现在":不在今天就跳回今天,否则原地刷新
       if (isToday(date)) await load(date);
       else setDate(new Date());
+      loadWeights(); // 可能记了体重,顺带刷新曲线数据
       return true;
     } catch (e) {
       showToast(e instanceof Error ? e.message : "发送失败", true);
@@ -149,19 +157,33 @@ function App() {
   const sessions = day?.groups.filter((g) => g.kind === "session") ?? [];
   const empty = !loading && !error && day && day.groups.length === 0;
 
+  // 所选日期零点之前的最后一次称重 =「上次体重」
+  const dayStartMs = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
+  const prior = (weights ?? []).filter((w) => w.at.getTime() < dayStartMs);
+  const prevWeight = prior.length > 0 ? prior[prior.length - 1] : null;
+
   return (
     <div className="min-h-dvh">
       <TopBar
-        day={day}
         dateLabel={dateLabel(date)}
         subLabel={subLabel(date)}
         atToday={isToday(date)}
         onPrev={() => setDate(addDays(date, -1))}
         onNext={() => setDate(addDays(date, 1))}
-        onWeightClick={() => setShowWeights(true)}
       />
 
       <main className="mx-auto max-w-md px-4 pb-32">
+        <Hero
+          day={day}
+          atToday={isToday(date)}
+          prevWeight={prevWeight}
+          spark={(weights ?? []).map((w) => w.kg)}
+          onWeightClick={() => setShowWeights(true)}
+        />
         {loading && (
           <p className="pt-16 text-center text-[13px] text-ink-soft/70">
             加载中…

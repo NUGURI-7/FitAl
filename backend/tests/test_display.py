@@ -97,6 +97,46 @@ async def test_体重曲线_只含窗口内记录_从早到晚(db):
     assert [w["weight_kg"] for w in out["weights"]] == [72.0, 71.0]
 
 
+async def test_日汇总_返回全天基础代谢与运动净耗合计(db):
+    user = await _user()
+    await _weight_at(user, 70.0, _utc(2, 1))  # 该日之前已称过体重
+    session = await _session(user, _utc(3, 10), 150)
+    from app.models import ExerciseRecord
+
+    e1 = await ExerciseRecord.create(
+        user=user,
+        raw_text="测试",
+        source="met_table",
+        kcal=100,
+        kcal_net=80,
+        exercise_name="卧推",
+    )
+    e2 = await ExerciseRecord.create(
+        user=user,
+        raw_text="测试",
+        source="user_reported",
+        kcal=50,
+        kcal_net=None,  # 自报热量,净耗未知
+        exercise_name="跑步",
+    )
+    e1.session = session
+    e2.session = session
+    await e1.save()
+    await e2.save()
+
+    out = await api.day_summary(DAY, user_id=user.id)
+    # 70kg/178cm/男/1997 → Mifflin-St Jeor 全天 1672.5
+    assert out["bmr_kcal"] == pytest.approx(1672.5, abs=0.1)
+    assert out["burn_net_kcal"] == 130.0  # 80 + 50(净耗未知按总耗计)
+
+
+async def test_从未称重_基础代谢为空(db):
+    user = await _user()
+    out = await api.day_summary(DAY, user_id=user.id)
+    assert out["bmr_kcal"] is None
+    assert out["burn_net_kcal"] == 0
+
+
 async def test_用户不存在_两个接口均报404(db):
     with pytest.raises(HTTPException) as e1:
         await api.day_summary(DAY, user_id=999)

@@ -41,6 +41,8 @@ interface ApiDay {
   date: string;
   intake_kcal: number;
   burn_kcal: number;
+  bmr_kcal: number | null;
+  burn_net_kcal: number;
   weight: number | null;
   meals: ApiGroup<ApiFoodItem>[];
   sessions: ApiGroup<ApiExerciseItem>[];
@@ -149,6 +151,8 @@ export async function fetchDay(dateISO: string): Promise<DaySummary> {
   return {
     intakeKcal: d.intake_kcal,
     burnKcal: d.burn_kcal,
+    bmrKcal: d.bmr_kcal,
+    burnNetKcal: d.burn_net_kcal,
     weightKg: d.weight,
     groups: [
       ...d.meals.map((m) => toGroup("meal", m)),

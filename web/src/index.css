@@ -55,6 +55,39 @@ body {
   animation: rise-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+/* 呼吸浮动:圆球/卡片的常驻微动效 */
+@keyframes float-y {
+  from {
+    transform: translateY(2px);
+  }
+  to {
+    transform: translateY(-4px);
+  }
+}
+.float-a {
+  animation: float-y 4.2s ease-in-out infinite alternate;
+}
+.float-b {
+  animation: float-y 5.4s ease-in-out infinite alternate;
+  animation-delay: 0.7s;
+}
+.float-c {
+  animation: float-y 6s ease-in-out infinite alternate;
+  animation-delay: 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .float-a,
+  .float-b,
+  .float-c,
+  .rise,
+  .unfold,
+  .sheet-up,
+  .fade-in {
+    animation: none;
+  }
+}
+
 /* 底部抽屉 */
 @keyframes sheet-up {
   from {
