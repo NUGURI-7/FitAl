@@ -181,7 +181,6 @@ function App() {
           day={day}
           atToday={isToday(date)}
           prevWeight={prevWeight}
-          spark={(weights ?? []).map((w) => w.kg)}
           onWeightClick={() => setShowWeights(true)}
         />
         {loading && (
