@@ -37,12 +37,12 @@ function SectionHeader({
         </span>
       </span>
       <span
-        className={`num text-[15px] font-bold ${isMeal ? "text-intake" : "text-burn"}`}
+        className={`num inline-flex items-baseline gap-0.5 rounded-full px-2.5 py-1 text-[13px] font-bold ${
+          isMeal ? "bg-intake-soft text-intake" : "bg-burn-soft text-burn"
+        }`}
       >
         {totalKcal}
-        <span className="ml-0.5 text-[10px] font-normal text-ink-soft">
-          千卡
-        </span>
+        <span className="text-[10px] font-normal opacity-70">千卡</span>
       </span>
     </div>
   );
