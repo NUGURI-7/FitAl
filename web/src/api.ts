@@ -3,13 +3,17 @@ import type { DaySummary, Group, RecordItem, Source } from "@/types";
 /** 单人使用期固定用户(2026-07-06 定案,多用户时再做选人) */
 export const USER_ID = 1;
 
-// ── 后端 /days 响应结构(契约③) ──────────────────────────────────────────
+// ── 后端响应结构(契约②③④) ─────────────────────────────────────────────
 
 interface ApiFoodItem {
   id: number;
   food_name: string;
   kcal: number;
   grams: number | null;
+  protein: number | null;
+  fat: number | null;
+  cho: number | null;
+  fiber: number | null;
   source: Source;
 }
 
@@ -42,6 +46,21 @@ interface ApiDay {
   sessions: ApiGroup<ApiExerciseItem>[];
 }
 
+async function requestJSON(url: string, init?: RequestInit) {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    let msg = `请求失败(${res.status})`;
+    try {
+      const e = await res.json();
+      if (typeof e.detail === "string") msg = e.detail;
+    } catch {
+      /* 保持默认错误文案 */
+    }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 // ── 视图映射 ─────────────────────────────────────────────────────────────
 
 const hm = (iso: string) =>
@@ -62,11 +81,20 @@ const kcal = (n: number) => Math.round(n);
 function foodItem(i: ApiFoodItem): RecordItem {
   return {
     id: i.id,
+    kind: "food",
     name: i.food_name,
     detail: i.grams != null ? `${+i.grams} g` : "按份记",
     kcal: kcal(i.kcal),
     kcalNet: null,
     source: i.source,
+    grams: i.grams,
+    protein: i.protein,
+    fat: i.fat,
+    cho: i.cho,
+    fiber: i.fiber,
+    durationMin: null,
+    loadKg: null,
+    reps: null,
   };
 }
 
@@ -80,11 +108,20 @@ function exerciseItem(i: ApiExerciseItem): RecordItem {
   if (i.duration_min != null) parts.push(`${+i.duration_min.toFixed(1)} 分钟`);
   return {
     id: i.id,
+    kind: "exercise",
     name: i.exercise_name,
     detail: parts.join(" · ") || "—",
     kcal: kcal(i.kcal),
     kcalNet: i.kcal_net != null ? kcal(i.kcal_net) : null,
     source: i.source,
+    grams: null,
+    protein: null,
+    fat: null,
+    cho: null,
+    fiber: null,
+    durationMin: i.duration_min,
+    loadKg: i.load_kg,
+    reps: i.reps,
   };
 }
 
@@ -98,7 +135,6 @@ function toGroup(
     name: g.name ?? (kind === "meal" ? "一顿饭" : "一场训练"),
     timeRange: timeRange(g.start, g.end),
     kcalTotal: g.kcal_total, // 保留小数,统一在渲染处取整,避免多处取整口径不一
-
     items:
       kind === "meal"
         ? (g.items as ApiFoodItem[]).map(foodItem)
@@ -109,9 +145,7 @@ function toGroup(
 // ── 接口调用 ─────────────────────────────────────────────────────────────
 
 export async function fetchDay(dateISO: string): Promise<DaySummary> {
-  const res = await fetch(`/api/days/${dateISO}?user_id=${USER_ID}`);
-  if (!res.ok) throw new Error(`加载失败(${res.status})`);
-  const d: ApiDay = await res.json();
+  const d: ApiDay = await requestJSON(`/api/days/${dateISO}?user_id=${USER_ID}`);
   return {
     intakeKcal: d.intake_kcal,
     burnKcal: d.burn_kcal,
@@ -121,6 +155,38 @@ export async function fetchDay(dateISO: string): Promise<DaySummary> {
       ...d.sessions.map((s) => toGroup("session", s)),
     ],
   };
+}
+
+/** 修正记录:饮食传 grams/kcal,运动传 duration_min/load_kg/reps/kcal;只发改动的字段 */
+export async function patchRecord(
+  kind: "food" | "exercise",
+  id: number,
+  body: Record<string, number>,
+): Promise<void> {
+  await requestJSON(`/api/records/${kind}/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteRecord(
+  kind: "food" | "exercise",
+  id: number,
+): Promise<void> {
+  await requestJSON(`/api/records/${kind}/${id}`, { method: "DELETE" });
+}
+
+export interface WeightPoint {
+  at: Date;
+  kg: number;
+}
+
+export async function fetchWeights(days = 30): Promise<WeightPoint[]> {
+  const d = await requestJSON(`/api/weights?user_id=${USER_ID}&days=${days}`);
+  return (d.weights as { weight_kg: number; created_at: string }[]).map(
+    (w) => ({ at: new Date(w.created_at), kg: w.weight_kg }),
+  );
 }
 
 /** 发一句话记录:走对话接口(SSE),返回后端的模板回执 */

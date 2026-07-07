@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dumbbell, NotebookPen, UtensilsCrossed } from "lucide-react";
 import { fetchDay, sendChat } from "@/api";
 import { GroupCard } from "@/components/GroupCard";
 import { InputBar } from "@/components/InputBar";
+import { ItemSheet } from "@/components/ItemSheet";
 import { TopBar } from "@/components/TopBar";
 import { addDays, dateLabel, isToday, subLabel, toISODate } from "@/lib/date";
-import type { DaySummary, Group } from "@/types";
+import type { DaySummary, Group, RecordItem } from "@/types";
+
+// 图表库较重,点开体重曲线时才加载
+const WeightSheet = lazy(() =>
+  import("@/components/WeightSheet").then((m) => ({ default: m.WeightSheet })),
+);
 
 function SectionHeader({
   kind,
@@ -54,10 +60,12 @@ function Section({
   kind,
   groups,
   delay,
+  onItemClick,
 }: {
   kind: "meal" | "session";
   groups: Group[];
   delay: number;
+  onItemClick: (item: RecordItem) => void;
 }) {
   if (groups.length === 0) return null;
   const total = Math.round(groups.reduce((acc, g) => acc + g.kcalTotal, 0));
@@ -66,7 +74,12 @@ function Section({
       <SectionHeader kind={kind} totalKcal={total} delay={delay} />
       <div className="space-y-2.5">
         {groups.map((g, i) => (
-          <GroupCard key={g.id} group={g} index={i + 1} />
+          <GroupCard
+            key={g.id}
+            group={g}
+            index={i + 1}
+            onItemClick={onItemClick}
+          />
         ))}
       </div>
     </>
@@ -79,6 +92,8 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [editing, setEditing] = useState<RecordItem | null>(null);
+  const [showWeights, setShowWeights] = useState(false);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(
     null,
   );
@@ -124,6 +139,12 @@ function App() {
     }
   };
 
+  const handleEdited = async (msg: string) => {
+    setEditing(null);
+    showToast(msg);
+    await load(date);
+  };
+
   const meals = day?.groups.filter((g) => g.kind === "meal") ?? [];
   const sessions = day?.groups.filter((g) => g.kind === "session") ?? [];
   const empty = !loading && !error && day && day.groups.length === 0;
@@ -137,6 +158,7 @@ function App() {
         atToday={isToday(date)}
         onPrev={() => setDate(addDays(date, -1))}
         onNext={() => setDate(addDays(date, 1))}
+        onWeightClick={() => setShowWeights(true)}
       />
 
       <main className="mx-auto max-w-md px-4 pb-32">
@@ -173,11 +195,17 @@ function App() {
 
         {!loading && !error && (
           <>
-            <Section kind="meal" groups={meals} delay={60} />
+            <Section
+              kind="meal"
+              groups={meals}
+              delay={60}
+              onItemClick={setEditing}
+            />
             <Section
               kind="session"
               groups={sessions}
               delay={60 + (meals.length + 1) * 70}
+              onItemClick={setEditing}
             />
             {day && day.groups.length > 0 && (
               <p className="pt-4 pb-1 text-center text-[11px] text-ink-soft/70">
@@ -202,6 +230,19 @@ function App() {
       )}
 
       <InputBar sending={sending} onSend={handleSend} />
+
+      {editing && (
+        <ItemSheet
+          item={editing}
+          onClose={() => setEditing(null)}
+          onDone={handleEdited}
+        />
+      )}
+      {showWeights && (
+        <Suspense fallback={null}>
+          <WeightSheet onClose={() => setShowWeights(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }

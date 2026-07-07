@@ -1,10 +1,18 @@
 import { useState } from "react";
 import { ChevronDown, Dumbbell, UtensilsCrossed } from "lucide-react";
 import { SourceBadge } from "@/components/SourceBadge";
-import type { Group } from "@/types";
+import type { Group, RecordItem } from "@/types";
 
-/** 一顿饭 / 一场训练的卡片:点卡片展开明细;点明细弹改删抽屉(第三步接) */
-export function GroupCard({ group, index }: { group: Group; index: number }) {
+/** 一顿饭 / 一场训练的卡片:点卡片展开明细;点明细弹改删抽屉 */
+export function GroupCard({
+  group,
+  index,
+  onItemClick,
+}: {
+  group: Group;
+  index: number;
+  onItemClick: (item: RecordItem) => void;
+}) {
   const [open, setOpen] = useState(false);
   const isMeal = group.kind === "meal";
 
@@ -53,6 +61,7 @@ export function GroupCard({ group, index }: { group: Group; index: number }) {
             <li key={item.id}>
               <button
                 type="button"
+                onClick={() => onItemClick(item)}
                 className="flex w-full items-center gap-2 px-4 py-2.5 text-left active:bg-paper/60"
               >
                 <span className="min-w-0 flex-1">

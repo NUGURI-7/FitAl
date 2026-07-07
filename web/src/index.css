@@ -55,6 +55,30 @@ body {
   animation: rise-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+/* 底部抽屉 */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.sheet-up {
+  animation: sheet-up 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 0.25s ease-out both;
+}
+
 /* 明细展开 */
 @keyframes unfold {
   from {

@@ -8,6 +8,7 @@ interface Props {
   atToday: boolean;
   onPrev: () => void;
   onNext: () => void;
+  onWeightClick: () => void;
 }
 
 /** 顶部常驻区:日期切换 + 当日汇总条(点体重出曲线,第三步接) */
@@ -18,6 +19,7 @@ export function TopBar({
   atToday,
   onPrev,
   onNext,
+  onWeightClick,
 }: Props) {
   return (
     <header className="sticky top-0 z-20 border-b border-hairline bg-paper/85 backdrop-blur-md">
@@ -69,7 +71,11 @@ export function TopBar({
               </span>
             </div>
           </div>
-          <button type="button" className="px-4 py-3 text-left active:bg-paper/60">
+          <button
+            type="button"
+            onClick={onWeightClick}
+            className="px-4 py-3 text-left active:bg-paper/60"
+          >
             <div className="flex items-center gap-1 text-[11px] font-medium text-steel">
               体重 <TrendingUp size={11} strokeWidth={2.5} />
             </div>
