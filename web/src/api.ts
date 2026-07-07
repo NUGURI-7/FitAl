@@ -97,7 +97,8 @@ function toGroup(
     kind,
     name: g.name ?? (kind === "meal" ? "一顿饭" : "一场训练"),
     timeRange: timeRange(g.start, g.end),
-    kcalTotal: kcal(g.kcal_total),
+    kcalTotal: g.kcal_total, // 保留小数,统一在渲染处取整,避免多处取整口径不一
+
     items:
       kind === "meal"
         ? (g.items as ApiFoodItem[]).map(foodItem)
@@ -112,8 +113,8 @@ export async function fetchDay(dateISO: string): Promise<DaySummary> {
   if (!res.ok) throw new Error(`加载失败(${res.status})`);
   const d: ApiDay = await res.json();
   return {
-    intakeKcal: kcal(d.intake_kcal),
-    burnKcal: kcal(d.burn_kcal),
+    intakeKcal: d.intake_kcal,
+    burnKcal: d.burn_kcal,
     weightKg: d.weight,
     groups: [
       ...d.meals.map((m) => toGroup("meal", m)),

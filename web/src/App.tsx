@@ -60,7 +60,7 @@ function Section({
   delay: number;
 }) {
   if (groups.length === 0) return null;
-  const total = groups.reduce((acc, g) => acc + g.kcalTotal, 0);
+  const total = Math.round(groups.reduce((acc, g) => acc + g.kcalTotal, 0));
   return (
     <>
       <SectionHeader kind={kind} totalKcal={total} delay={delay} />

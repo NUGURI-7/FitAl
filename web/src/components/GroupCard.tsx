@@ -34,7 +34,7 @@ export function GroupCard({ group, index }: { group: Group; index: number }) {
           </span>
         </span>
         <span className="num text-[17px] font-bold">
-          {group.kcalTotal}
+          {Math.round(group.kcalTotal)}
           <span className="ml-0.5 text-[11px] font-normal text-ink-soft">
             千卡
           </span>

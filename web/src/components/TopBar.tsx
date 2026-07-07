@@ -54,7 +54,7 @@ export function TopBar({
           <div className="px-4 py-3">
             <div className="text-[11px] font-medium text-intake">摄入</div>
             <div className="num text-[24px] font-bold leading-8">
-              {day ? day.intakeKcal : "–"}
+              {day ? Math.round(day.intakeKcal) : "–"}
               <span className="ml-0.5 text-[11px] font-normal text-ink-soft">
                 千卡
               </span>
@@ -63,7 +63,7 @@ export function TopBar({
           <div className="px-4 py-3">
             <div className="text-[11px] font-medium text-burn">消耗</div>
             <div className="num text-[24px] font-bold leading-8">
-              {day ? day.burnKcal : "–"}
+              {day ? Math.round(day.burnKcal) : "–"}
               <span className="ml-0.5 text-[11px] font-normal text-ink-soft">
                 千卡
               </span>
