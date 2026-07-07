@@ -29,7 +29,7 @@ async def _food(user, name="鸡胸脯肉", grams=200.0, kcal=236.0, source="food
         grams=grams,
         protein=49.2,
     )
-    return await aggregate.assign_food(rec, None, False), rec
+    return await aggregate.assign_food(rec), rec
 
 
 async def test_改克数_表内食物全套重算且餐次总数跟着变(db):
@@ -71,7 +71,7 @@ async def test_删除_餐次重算_删到空则整组消失(db):
         food_name="米饭(蒸,代表值)",
         grams=100,
     )
-    await aggregate.assign_food(rec2, meal, False)
+    await aggregate.assign_food(rec2)  # 同槽自动并入同一顿
 
     await api.delete_food(rec2.id)
     await meal.refresh_from_db()

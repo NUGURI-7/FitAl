@@ -38,16 +38,16 @@ def test_优先级3_静态表按克重计算():
     assert r.protein == pytest.approx(49.2)
 
 
-def test_起名与归组判断穿透到解析结果():
+def test_明说餐次与场次归组判断穿透到解析结果():
     [f, e] = _build(
         [
-            ParsedFood(name="鸡胸脯肉", grams=200, group_name="鸡胸肉午餐"),
+            ParsedFood(name="鸡胸脯肉", grams=200, meal_slot="早餐"),
             ParsedExercise(
                 name="卧推", reps=10, starts_new_group=True, group_name="晚间胸部训练"
             ),
         ]
     )
-    assert f.group_name == "鸡胸肉午餐"
+    assert f.meal_slot == "早餐"  # 用户明说的餐次原样穿透,归组由聚合层执行
     assert e.starts_new_group is True
     assert e.group_name == "晚间胸部训练"
 

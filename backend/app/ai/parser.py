@@ -84,8 +84,7 @@ class ResolvedFood:
     fat: float | None
     cho: float | None
     fiber: float | None
-    starts_new_group: bool = False  # AI 的归组判断:新开一顿还是延续当前
-    group_name: str = ""  # AI 给所在餐次起的展示名,空则聚合时走时段兜底
+    meal_slot: str | None = None  # 用户明说的餐次;空则聚合时按时钟落槽
 
 
 @dataclass
@@ -202,7 +201,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             source="llm_estimated",
             kcal=kcal,
             grams=grams,
-            group_name=p.group_name,
+            meal_slot=p.meal_slot,
             protein=nutrition["protein"] if nutrition else None,
             fat=nutrition["fat"] if nutrition else None,
             cho=nutrition["cho"] if nutrition else None,
@@ -211,13 +210,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
 
     if p.reported_kcal is not None:  # 优先级1:用户自报
         return _food_record(
-            p.name,
-            "user_reported",
-            p.reported_kcal,
-            p.grams,
-            nutrition,
-            p.starts_new_group,
-            p.group_name,
+            p.name, "user_reported", p.reported_kcal, p.grams, nutrition, p.meal_slot
         )
 
     uf = user_foods.get(p.name)
@@ -229,8 +222,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             source="user_food",
             kcal=round(uf.kcal * units, 1),
             grams=p.grams,
-            starts_new_group=p.starts_new_group,
-            group_name=p.group_name,
+            meal_slot=p.meal_slot,
             protein=scale(uf.protein),
             fat=scale(uf.fat),
             cho=scale(uf.cho),
@@ -244,34 +236,24 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             nutrition["kcal"],
             p.grams,
             nutrition,
-            p.starts_new_group,
-            p.group_name,
+            p.meal_slot,
         )
 
     if p.est_kcal is not None:  # 优先级4:估算兜底
         return _food_record(
-            p.name,
-            "llm_estimated",
-            p.est_kcal,
-            p.grams,
-            None,
-            p.starts_new_group,
-            p.group_name,
+            p.name, "llm_estimated", p.est_kcal, p.grams, None, p.meal_slot
         )
 
     raise ValueError(f"{p.name}: 查表未命中且无估算值")
 
 
-def _food_record(
-    name, source, kcal, grams, nutrition, starts_new=False, group_name=""
-) -> ResolvedFood:
+def _food_record(name, source, kcal, grams, nutrition, meal_slot=None) -> ResolvedFood:
     return ResolvedFood(
         food_name=name,
         source=source,
         kcal=kcal,
         grams=grams,
-        starts_new_group=starts_new,
-        group_name=group_name,
+        meal_slot=meal_slot,
         protein=nutrition["protein"] if nutrition else None,
         fat=nutrition["fat"] if nutrition else None,
         cho=nutrition["cho"] if nutrition else None,
@@ -342,11 +324,13 @@ def _instructions() -> str:
 9. 复合菜且用户没报食材份量 → 拆解为表内食材,逐条估克重(估克重可以,估热量不行)。
 10. "又一组/再来一组/同上"是对同一组动作的补充说明,整句只输出一条记录:
     "硬拉100公斤5个又一组" → 仅一条(name=硬拉, load_kg=100, reps=5)。
-11. 归组判断:消息可能附带[当前餐次]/[当前训练场次](当天最近一组的时间与内容)。
-    对每条 food/exercise 结合当前时间和内容常识判断:延续它 → starts_new_group=false;
-    是新的一顿饭/新一场训练 → starts_new_group=true。没附带当前组信息时此字段无效。
-12. 起名:每条 food/exercise 都填 group_name——该记录所归入的一顿/一场的展示名
-    (2~8字,按内容与时段起);延续已有组时结合组内已含内容给更贴切的名字。
+11. 餐次归属(仅 food):仅当用户明说了这是哪一顿——早餐/早饭→早餐,午餐/午饭/中饭→午餐,
+    下午茶/下午加餐→下午茶,晚餐/晚饭→晚餐,夜宵/宵夜→其余——才填 meal_slot;
+    没明说必须不填(留空),系统会按时间自动归,绝不要猜。
+12. 场次归组(仅 exercise):消息可能附带[当前训练场次](当天最近一场的时间与内容)。
+    结合当前时间和内容常识判断:延续它 → starts_new_group=false;新一场 → true。
+    每条 exercise 填 group_name——所在场次的展示名(2~8字,按内容与时段起,
+    如"晚间胸部训练");延续已有场次时结合已含内容给更贴切的名字。
 13. "记住……"类指令:定义自己的食物(名称+每份热量)→ 输出 user_food_def 条目;
     叫法对应("我说X指的是Y")→ memory 条目(kind=alias);习惯/长期事实 → memory
     条目(kind=habit)。这类话本身不产生 food/exercise 记录,除非用户同时说这次吃了/练了。
@@ -433,20 +417,18 @@ async def parse_text(
     *,
     now: datetime,
     user_food_names: frozenset[str] = frozenset(),
-    open_meal: str | None = None,
     open_session: str | None = None,
     memories: str | None = None,
 ) -> ParseOutput:
     """LLM 洗数据入口:一次解析 + 未命中名字的候选重映射(微循环)。
 
-    open_meal/open_session:当天最近一顿/一场的摘要,AI 据此判断归组(无阈值常量)。
+    open_session:当天最近一场训练的摘要,AI 据此判断场次归组(无阈值常量)。
+    餐次不需要上下文:时段制归组在聚合层由代码完成(2026-07-07 用户定)。
     memories:该用户全部记忆拼成的一段文本(量小,全量注入,不做检索)。
     """
     # 存储用 UTC;给 LLM 看的时间转本地时区,否则"中午/晚上"这类语境会错 8 小时
     local_now = now.astimezone(ZoneInfo(settings.TIMEZONE)) if now.tzinfo else now
     prefix = f"[当前时间 {local_now:%Y-%m-%d %H:%M}]"
-    if open_meal:
-        prefix += f"[当前餐次:{open_meal}]"
     if open_session:
         prefix += f"[当前训练场次:{open_session}]"
     if user_food_names:

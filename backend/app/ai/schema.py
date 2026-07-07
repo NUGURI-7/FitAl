@@ -8,6 +8,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+# 餐次时段制(2026-07-07 用户定):餐次=固定五槽,组名=时段名
+MealSlot = Literal["早餐", "午餐", "下午茶", "晚餐", "其余"]
+
 
 class ParsedExercise(BaseModel):
     type: Literal["exercise"] = "exercise"
@@ -49,13 +52,9 @@ class ParsedFood(BaseModel):
         None, description="该份食物总热量估算,仅当名称可能不在表里时作兜底"
     )
     is_cooking_oil: bool = Field(False, description="是否为自动补的烹调油条目")
-    starts_new_group: bool = Field(
-        False,
-        description="归组判断:延续消息中给出的[当前餐次]填 false;是新的一顿饭填 true",
-    )
-    group_name: str = Field(
-        "",
-        description='该记录所在一顿饭的展示名(2~8字,按内容与时段起,如"早餐""鸡胸肉午餐");延续已有餐次时结合已含内容给更贴切的名字',
+    meal_slot: MealSlot | None = Field(
+        None,
+        description="仅当用户明说了这是哪一顿(早餐/午餐/下午茶/晚餐;夜宵、宵夜填其余)才填;没明说必须不填,由系统按时间归入",
     )
 
 
