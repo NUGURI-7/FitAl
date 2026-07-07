@@ -26,8 +26,6 @@ export interface Group {
 }
 
 export interface DaySummary {
-  dateLabel: string;
-  weekdayLabel: string;
   intakeKcal: number;
   burnKcal: number;
   weightKg: number | null;
