@@ -32,7 +32,7 @@ export function TopBar({ day }: { day: DaySummary }) {
         </div>
 
         {/* 汇总条:摄入 / 消耗 / 体重(点体重出曲线,第三步接) */}
-        <div className="rise mb-3 grid grid-cols-3 divide-x divide-hairline rounded-2xl bg-card shadow-[0_1px_2px_rgba(38,35,29,0.06)] ring-1 ring-black/[0.04]">
+        <div className="rise mt-2 mb-3.5 grid grid-cols-3 divide-x divide-hairline rounded-2xl bg-card shadow-[0_1px_2px_rgba(38,35,29,0.06)] ring-1 ring-black/[0.04]">
           <div className="px-4 py-3">
             <div className="text-[11px] font-medium text-intake">摄入</div>
             <div className="num text-[24px] font-bold leading-8">
