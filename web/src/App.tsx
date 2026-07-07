@@ -1,3 +1,4 @@
+import { Dumbbell, UtensilsCrossed } from "lucide-react";
 import { GroupCard } from "@/components/GroupCard";
 import { InputBar } from "@/components/InputBar";
 import { TopBar } from "@/components/TopBar";
@@ -5,23 +6,44 @@ import { mockDay } from "@/data/mock";
 import type { Group } from "@/types";
 
 function SectionHeader({
-  label,
-  colorCls,
+  kind,
   totalKcal,
   delay,
 }: {
-  label: string;
-  colorCls: string;
+  kind: "meal" | "session";
   totalKcal: number;
   delay: number;
 }) {
+  const isMeal = kind === "meal";
   return (
     <div
-      className="rise flex items-baseline justify-between px-1.5 pt-3 pb-1"
+      className="rise flex items-center justify-between px-1 pt-4 pb-2"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <span className={`text-[13px] font-semibold ${colorCls}`}>{label}</span>
-      <span className="num text-[11px] text-ink-soft">共 {totalKcal} 千卡</span>
+      <span className="flex items-center gap-2">
+        <span
+          className={`flex size-6 items-center justify-center rounded-lg ${
+            isMeal ? "bg-intake-soft text-intake" : "bg-burn-soft text-burn"
+          }`}
+        >
+          {isMeal ? (
+            <UtensilsCrossed size={13} strokeWidth={2.5} />
+          ) : (
+            <Dumbbell size={13} strokeWidth={2.5} />
+          )}
+        </span>
+        <span className="text-[15px] font-bold tracking-wide">
+          {isMeal ? "饮食" : "运动"}
+        </span>
+      </span>
+      <span
+        className={`num text-[15px] font-bold ${isMeal ? "text-intake" : "text-burn"}`}
+      >
+        {totalKcal}
+        <span className="ml-0.5 text-[10px] font-normal text-ink-soft">
+          千卡
+        </span>
+      </span>
     </div>
   );
 }
@@ -37,12 +59,7 @@ function App() {
       <TopBar day={day} />
 
       <main className="mx-auto max-w-md px-4 pb-28">
-        <SectionHeader
-          label="饮食"
-          colorCls="text-intake"
-          totalKcal={sum(meals)}
-          delay={60}
-        />
+        <SectionHeader kind="meal" totalKcal={sum(meals)} delay={60} />
         <div className="space-y-2.5">
           {meals.map((g, i) => (
             <GroupCard key={g.id} group={g} index={i + 1} />
@@ -50,8 +67,7 @@ function App() {
         </div>
 
         <SectionHeader
-          label="运动"
-          colorCls="text-burn"
+          kind="session"
           totalKcal={sum(sessions)}
           delay={60 + (meals.length + 1) * 70}
         />
