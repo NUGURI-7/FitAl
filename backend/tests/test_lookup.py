@@ -63,3 +63,43 @@ def test_别名查运动_撸铁映射到力量训练():
 
 def test_无换算规则的运动按次数返回None():
     assert lookup.count_to_duration_min(lookup.find_exercise("跑步"), 10) is None
+
+
+# ── 形态歧义簇(2026-07-08 缩水版:人工圈定高频簇,簇内标形态) ──────────
+
+
+def test_歧义簇_每个成员都能在官方表命中():
+    for cluster in lookup._FORM_CLUSTERS.values():
+        for m in cluster:
+            assert lookup.find_food(m.name) is not None, f"簇成员不在官方表: {m.name}"
+
+
+def test_歧义簇_同簇形态互不重复且在封闭词表内():
+    allowed = {"生", "熟", "干", "水发", "即食"}
+    seen_clusters = {id(c): c for c in lookup._FORM_CLUSTERS.values()}
+    for cluster in seen_clusters.values():
+        forms = [m.form for m in cluster]
+        assert len(forms) == len(set(forms)), f"同簇形态重复: {forms}"
+        assert set(forms) <= allowed, f"形态超出封闭词表: {forms}"
+
+
+def test_歧义簇_同簇成员热量差异至少两倍_否则不配当陷阱():
+    seen_clusters = {id(c): c for c in lookup._FORM_CLUSTERS.values()}
+    for cluster in seen_clusters.values():
+        kcals = [lookup.find_food(m.name).kcal for m in cluster]
+        assert max(kcals) >= 2 * min(kcals), (
+            f"热量差不足两倍: {[m.name for m in cluster]}"
+        )
+
+
+def test_歧义簇_簇成员查得到全簇_非簇食物返回空():
+    cluster = lookup.form_cluster("米饭(蒸，代表值)")
+    assert cluster is not None
+    assert {m.name for m in cluster} == {"稻米(代表值)", "米饭(蒸，代表值)"}
+    assert lookup.form_cluster("鸡胸脯肉") is None
+
+
+def test_歧义簇_成员自身形态标签可查():
+    assert lookup.cluster_member_form("稻米(代表值)") == "生"
+    assert lookup.cluster_member_form("木耳(水发)") == "水发"
+    assert lookup.cluster_member_form("鸡胸脯肉") is None

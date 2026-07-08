@@ -69,9 +69,8 @@ async def chat(body: ChatIn) -> StreamingResponse:
         await ExerciseRecord.filter(user=user).order_by("-created_at").first()
     )
     user_foods = {
-        uf.name: parser.UserFoodDef(
+        lookup.norm_key(uf.name): parser.UserFoodDef(
             name=uf.name,
-            unit=uf.unit,
             kcal=uf.kcal,
             protein=uf.protein,
             fat=uf.fat,
@@ -87,7 +86,7 @@ async def chat(body: ChatIn) -> StreamingResponse:
     parsed = await parser.parse_text(
         body.text,
         now=now,
-        user_food_names=frozenset(user_foods),
+        user_food_keys=frozenset(user_foods),
         open_session=await aggregate.session_summary(current_session),
         memories=";".join(r.content for r in memory_rows) or None,
     )
@@ -154,16 +153,18 @@ async def persist_records(
                 }
             )
         elif isinstance(r, ParsedUserFoodDef):
+            if r.grams is None:  # 硬校验:缺克数无法换算每100克,不入库,回执提示补
+                continue
+            per100 = lambda v: None if v is None else round(v / r.grams * 100, 1)  # noqa: E731
             rec, _ = await UserFood.update_or_create(  # 重复"记住"=更新定义
                 user=user,
                 name=r.name,
                 defaults={
-                    "unit": r.unit,
-                    "kcal": r.kcal,
-                    "protein": r.protein,
-                    "fat": r.fat,
-                    "cho": r.cho,
-                    "fiber": r.fiber,
+                    "kcal": per100(r.kcal),
+                    "protein": per100(r.protein),
+                    "fat": per100(r.fat),
+                    "cho": per100(r.cho),
+                    "fiber": per100(r.fiber),
                 },
             )
             cards.append(
@@ -171,7 +172,6 @@ async def persist_records(
                     "type": "user_food",
                     "id": rec.id,
                     "name": rec.name,
-                    "unit": rec.unit,
                     "kcal": rec.kcal,
                 }
             )
@@ -226,6 +226,7 @@ async def persist_records(
                 kcal=r.kcal,
                 food_name=r.food_name,
                 grams=r.grams,
+                dish=r.dish,
                 protein=r.protein,
                 fat=r.fat,
                 cho=r.cho,
@@ -239,6 +240,7 @@ async def persist_records(
                     "food_name": rec.food_name,
                     "kcal": rec.kcal,
                     "grams": rec.grams,
+                    "dish": rec.dish,
                     "protein": rec.protein,
                     "fat": rec.fat,
                     "cho": rec.cho,
@@ -253,15 +255,23 @@ async def persist_records(
 
 
 def compose_reply(resolved: list[parser.ResolvedRecord]) -> str:
-    """模板拼接的一句话回执,零 LLM 成本。"""
+    """模板拼接的一句话回执,零 LLM 成本。"已记录"只冠给真正入库的部分。"""
     if not resolved:
         return "没听出要记的内容,换个说法试试?"
     parts = []
+    hints = []  # 没入库的提示(如"记住"缺克数被打回),不冠"已记录"
     for r in resolved:
         if isinstance(r, parser.ResolvedWeight):
             parts.append(f"体重 {r.weight_kg:g}kg")
         elif isinstance(r, ParsedUserFoodDef):
-            parts.append(f"记住了 {r.name}(每{r.unit}{r.kcal:g}千卡)")
+            if r.grams is None:
+                hints.append(
+                    f"{r.name} 还没记住:请补上克数(比如「{r.name}100克{r.kcal:g}千卡」)"
+                )
+            else:
+                parts.append(
+                    f"记住了 {r.name}(每100克{round(r.kcal / r.grams * 100, 1):g}千卡)"
+                )
         elif isinstance(r, ParsedMemory):
             parts.append(f"记住了:{r.content}")
         elif isinstance(r, parser.ResolvedExercise):
@@ -275,7 +285,12 @@ def compose_reply(resolved: list[parser.ResolvedRecord]) -> str:
             parts.append(
                 f"{r.food_name}{grams} ≈{r.kcal:g}千卡({SOURCE_LABEL[r.source]})"
             )
-    return "已记录:" + ";".join(parts)
+    out = []
+    if parts:
+        out.append("已记录:" + ";".join(parts))
+    if hints:
+        out.append(";".join(hints))
+    return ";".join(out)
 
 
 # ── 修正/删除(契约②):只落 raw,触发所在聚合增量重算 ─────────────────────
@@ -480,6 +495,47 @@ def _local_day_range_utc(day: date) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
+def _meal_items(records: list[FoodRecord]) -> list[dict]:
+    """餐次明细分两种:带菜标签的成分归拢成"菜"(合计现算,不存表),
+    无标签的平铺为单品——老数据全是单品,零迁移天然兼容。
+    菜的位置=其成分首次出现的位置;同顿同名菜合并。
+    """
+    out: list[dict] = []
+    dish_groups: dict[str, dict] = {}
+    for i in records:
+        entry = {
+            "id": i.id,
+            "food_name": i.food_name,
+            "kcal": i.kcal,
+            "grams": i.grams,
+            "protein": i.protein,
+            "fat": i.fat,
+            "cho": i.cho,
+            "fiber": i.fiber,
+            "source": i.source,
+            "created_at": i.created_at.isoformat(),
+        }
+        if not i.dish:
+            out.append({"type": "food", **entry})
+            continue
+        group = dish_groups.get(i.dish)
+        if group is None:
+            group = {
+                "type": "dish",
+                "dish_name": i.dish,
+                "total_grams": 0.0,
+                "kcal_total": 0.0,
+                "items": [],
+            }
+            dish_groups[i.dish] = group
+            out.append(group)
+        group["items"].append(entry)
+        group["kcal_total"] = round(group["kcal_total"] + i.kcal, 1)
+        if i.grams:
+            group["total_grams"] = round(group["total_grams"] + i.grams, 1)
+    return out
+
+
 @router.get("/days/{day}")
 async def day_summary(day: date, user_id: int) -> dict:
     """某天汇总:摄入/消耗直接读聚合层合计;当天没称重则体重为空,不沿用旧值。
@@ -530,21 +586,7 @@ async def day_summary(day: date, user_id: int) -> dict:
                 "start": m.start.isoformat(),
                 "end": m.end.isoformat(),
                 "kcal_total": m.kcal_total,
-                "items": [
-                    {
-                        "id": i.id,
-                        "food_name": i.food_name,
-                        "kcal": i.kcal,
-                        "grams": i.grams,
-                        "protein": i.protein,
-                        "fat": i.fat,
-                        "cho": i.cho,
-                        "fiber": i.fiber,
-                        "source": i.source,
-                        "created_at": i.created_at.isoformat(),
-                    }
-                    for i in items
-                ],
+                "items": _meal_items(items),
             }
         )
     sessions_out = []

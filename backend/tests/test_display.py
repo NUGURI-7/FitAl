@@ -144,3 +144,47 @@ async def test_用户不存在_两个接口均报404(db):
     with pytest.raises(HTTPException) as e2:
         await api.weight_curve(user_id=999)
     assert e2.value.status_code == 404
+
+
+async def test_日汇总_带菜标签的成分归拢成菜且合计现算(db):
+    user = await _user()
+    meal = await _meal(user, _utc(3, 0), 700)
+    for name, kcal, grams, dish in [
+        ("鸡胸脯肉", 118, 100, None),  # 单品
+        ("面包", 315, 90, "毛毛虫面包"),
+        ("奶油", 263.7, 30, "毛毛虫面包"),
+    ]:
+        await FoodRecord.create(
+            user=user,
+            raw_text="测试",
+            source="food_table",
+            kcal=kcal,
+            food_name=name,
+            grams=grams,
+            dish=dish,
+            meal=meal,
+        )
+    out = await api.day_summary(DAY, user_id=user.id)
+    [plain, dish] = out["meals"][0]["items"]
+    assert plain["type"] == "food" and plain["food_name"] == "鸡胸脯肉"
+    assert dish["type"] == "dish" and dish["dish_name"] == "毛毛虫面包"
+    assert dish["total_grams"] == 120.0  # 90+30,现算
+    assert dish["kcal_total"] == 578.7  # 315+263.7,现算
+    assert [i["food_name"] for i in dish["items"]] == ["面包", "奶油"]
+
+
+async def test_日汇总_老数据无菜标签全部平铺为单品(db):
+    user = await _user()
+    meal = await _meal(user, _utc(3, 0), 350)
+    for name in ("米饭(蒸，代表值)", "鸡蛋(代表值)"):
+        await FoodRecord.create(
+            user=user,
+            raw_text="测试",
+            source="food_table",
+            kcal=100,
+            food_name=name,
+            grams=100,
+            meal=meal,
+        )
+    out = await api.day_summary(DAY, user_id=user.id)
+    assert [i["type"] for i in out["meals"][0]["items"]] == ["food", "food"]

@@ -98,7 +98,10 @@ class FoodRecord(Model):
     )  # user_reported | food_table | llm_estimated
     kcal = fields.FloatField()
     food_name = fields.CharField(max_length=64)
-    grams = fields.FloatField(null=True)  # 自定义食物按"份"记时可空
+    grams = fields.FloatField(null=True)  # 自报总热量没报克数时可空
+    dish = fields.CharField(
+        max_length=64, null=True
+    )  # 所属菜名:同菜成分同名;菜合计现算,不建菜表
     protein = fields.FloatField(null=True)
     fat = fields.FloatField(null=True)
     cho = fields.FloatField(null=True)
@@ -113,15 +116,15 @@ class FoodRecord(Model):
 
 
 class UserFood(Model):
-    """用户自定义食物:按"份"定义一次,查表优先级高于标准表。"""
+    """用户自定义食物:每100克口径,与官方表同构;查表优先级高于标准表。"""
 
     id = fields.IntField(primary_key=True)
     user = fields.ForeignKeyField(
         "models.User", related_name="user_foods", on_delete=fields.CASCADE
     )
     name = fields.CharField(max_length=64)
-    unit = fields.CharField(max_length=16, default="份")  # 份/勺/碗/个,自由文本
-    kcal = fields.FloatField()  # 每单位
+    form = fields.CharField(max_length=16, null=True)  # 形态:生/熟/干/水发/即食
+    kcal = fields.FloatField()  # 每100克
     protein = fields.FloatField(null=True)
     fat = fields.FloatField(null=True)
     cho = fields.FloatField(null=True)

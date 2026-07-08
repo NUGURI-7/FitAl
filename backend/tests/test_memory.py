@@ -18,7 +18,7 @@ async def _user(nick="记忆测试"):
 
 def test_解析透传_记住条目不经计算原样传递():
     items = [
-        ParsedUserFoodDef(name="老三样", unit="份", kcal=520),
+        ParsedUserFoodDef(name="老三样", grams=100, kcal=520),
         ParsedMemory(kind="alias", content="用户说鸡胸指鸡胸脯肉"),
     ]
     records = parser.build_records(
@@ -27,16 +27,40 @@ def test_解析透传_记住条目不经计算原样传递():
     assert records == items
 
 
-async def test_记住自定义食物_落库且重复记住即更新(db):
+async def test_记住自定义食物_按克数换算成每100克入库(db):
     user = await _user()
-    item = ParsedUserFoodDef(name="老三样", unit="份", kcal=520)
-    await api.persist_records(user, "记住老三样一份520千卡", [item])
+    item = ParsedUserFoodDef(name="老三样", grams=50, kcal=260, protein=22.5)
+    await api.persist_records(user, "记住老三样50克260千卡", [item])
+    [row] = await UserFood.filter(user=user)
+    assert row.kcal == 520  # 260千卡/50克 → 每100克520千卡,换算归代码
+    assert row.protein == 45
+    assert row.form is None  # 形态列可空,没说不填
+
+
+async def test_记住自定义食物_重复记住即更新(db):
+    user = await _user()
     await api.persist_records(
-        user, "记住老三样一份550千卡", [ParsedUserFoodDef(name="老三样", kcal=550)]
+        user,
+        "记住老三样100克520千卡",
+        [ParsedUserFoodDef(name="老三样", grams=100, kcal=520)],
+    )
+    await api.persist_records(
+        user,
+        "记住老三样100克550千卡",
+        [ParsedUserFoodDef(name="老三样", grams=100, kcal=550)],
     )
     rows = await UserFood.filter(user=user)
     assert len(rows) == 1
     assert rows[0].kcal == 550
+
+
+async def test_记住缺克数_不入库且回执提示补克数(db):
+    user = await _user()
+    item = ParsedUserFoodDef(name="老三样", kcal=520)  # 用户没给克数
+    cards = await api.persist_records(user, "记住老三样520千卡", [item])
+    assert cards == []
+    assert await UserFood.filter(user=user).count() == 0
+    assert "补上克数" in api.compose_reply([item])
 
 
 async def test_记住叫法_落记忆表(db):

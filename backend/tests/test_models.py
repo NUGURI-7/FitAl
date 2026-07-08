@@ -60,3 +60,28 @@ async def test_删除餐次_raw记录保留仅解除归属(db):
     await meal.delete()
     await record.refresh_from_db()
     assert record.meal_id is None  # raw 是唯一事实源,new 层删除不伤 raw
+
+
+async def test_饮食记录_可带所属菜名标签且默认为空(db):
+    user = await User.create(
+        nickname="测试3", height_cm=178, sex="male", birth_year=1997
+    )
+    plain = await FoodRecord.create(
+        user=user,
+        raw_text="鸡蛋100g",
+        source="food_table",
+        kcal=139,
+        food_name="鸡蛋(代表值)",
+        grams=100,
+    )
+    part = await FoodRecord.create(
+        user=user,
+        raw_text="番茄炒蛋",
+        source="food_table",
+        kcal=139,
+        food_name="鸡蛋(代表值)",
+        grams=100,
+        dish="番茄炒蛋",
+    )
+    assert plain.dish is None  # 单独报的食物不带菜标签,老数据天然兼容
+    assert part.dish == "番茄炒蛋"  # 同一道菜的成分带同名标签,菜合计现算不建表

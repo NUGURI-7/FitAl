@@ -23,6 +23,11 @@ def _norm(s: str) -> str:
     )
 
 
+def norm_key(s: str) -> str:
+    """对外的键归一化:自定义食物"原话叫法"精确命中用,与官方表同一套规则。"""
+    return _norm(s)
+
+
 @dataclass(frozen=True)
 class FoodItem:
     name: str
@@ -32,6 +37,14 @@ class FoodItem:
     fat: float | None
     cho: float | None
     fiber: float | None
+
+
+@dataclass(frozen=True)
+class ClusterMember:
+    """形态歧义簇成员:官方表条目名 + 形态(生/熟/干/水发/即食)。"""
+
+    name: str
+    form: str
 
 
 @dataclass(frozen=True)
@@ -95,8 +108,22 @@ def _load_met() -> tuple[dict[str, MetItem], dict[str, str]]:
     return by_name, alias_to_name
 
 
+def _load_clusters() -> dict[str, tuple[ClusterMember, ...]]:
+    """高频形态歧义簇(人工圈定小清单):簇成员名 → 全簇。"""
+    raw = json.loads((_DATA_DIR / "form_clusters.json").read_text(encoding="utf-8"))
+    by_member: dict[str, tuple[ClusterMember, ...]] = {}
+    for cluster in raw["clusters"]:
+        members = tuple(
+            ClusterMember(name=m["name"], form=m["form"]) for m in cluster["members"]
+        )
+        for m in members:
+            by_member[_norm(m.name)] = members
+    return by_member
+
+
 _FOOD_BY_NAME, _FOOD_ALIAS, _FOOD_AMBIGUOUS = _load_food()
 _MET_BY_NAME, _MET_ALIAS = _load_met()
+_FORM_CLUSTERS = _load_clusters()
 
 
 def find_food(name: str) -> FoodItem | None:
@@ -107,6 +134,26 @@ def find_food(name: str) -> FoodItem | None:
 def find_exercise(name: str) -> MetItem | None:
     key = _norm(name)
     return _MET_BY_NAME.get(key) or _MET_BY_NAME.get(_MET_ALIAS.get(key, ""))
+
+
+def form_cluster(name: str) -> tuple[ClusterMember, ...] | None:
+    """名字落在歧义簇内则返回全簇(形态裁决的封闭候选);否则返回 None。"""
+    key = _norm(name)
+    return _FORM_CLUSTERS.get(key) or _FORM_CLUSTERS.get(_FOOD_ALIAS.get(key, ""))
+
+
+def cluster_member_form(name: str) -> str | None:
+    """簇内条目自身的形态标签;非簇条目返回 None。"""
+    key = _norm(name)
+    if key not in _FORM_CLUSTERS:  # 别名先落到标准名,再进簇查
+        key = _FOOD_ALIAS.get(key, "")
+    cluster = _FORM_CLUSTERS.get(key)
+    if cluster is None:
+        return None
+    for m in cluster:
+        if _norm(m.name) == key:
+            return m.form
+    return None
 
 
 def met_items() -> list[MetItem]:
