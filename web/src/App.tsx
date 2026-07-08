@@ -1,13 +1,19 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dumbbell, NotebookPen, UtensilsCrossed } from "lucide-react";
-import { fetchDay, fetchWeights, sendChat, type WeightPoint } from "@/api";
+import {
+  deleteRecord,
+  fetchDay,
+  fetchWeights,
+  sendChat,
+  type WeightPoint,
+} from "@/api";
 import { GroupCard } from "@/components/GroupCard";
 import { Hero } from "@/components/Hero";
 import { InputBar } from "@/components/InputBar";
 import { ItemSheet } from "@/components/ItemSheet";
 import { TopBar } from "@/components/TopBar";
 import { addDays, dateLabel, isToday, subLabel, toISODate } from "@/lib/date";
-import type { DaySummary, Group, RecordItem } from "@/types";
+import type { DaySummary, DishEntry, Group, RecordItem } from "@/types";
 
 // 图表库较重,点开体重曲线时才加载
 const WeightSheet = lazy(() =>
@@ -62,11 +68,13 @@ function Section({
   groups,
   delay,
   onItemClick,
+  onDeleteDish,
 }: {
   kind: "meal" | "session";
   groups: Group[];
   delay: number;
   onItemClick: (item: RecordItem) => void;
+  onDeleteDish: (dish: DishEntry) => Promise<void>;
 }) {
   if (groups.length === 0) return null;
   const total = Math.round(groups.reduce((acc, g) => acc + g.kcalTotal, 0));
@@ -80,6 +88,7 @@ function Section({
             group={g}
             index={i + 1}
             onItemClick={onItemClick}
+            onDeleteDish={onDeleteDish}
           />
         ))}
       </div>
@@ -107,8 +116,11 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   };
 
-  const load = useCallback(async (d: Date) => {
-    setLoading(true);
+  // silent=静默刷新(改/删/记录后的重拉):旧数据挂着原地换数值,
+  // 不清空列表、不闪加载态、展开状态与动画都不受影响;
+  // 仅首次进入与切换日期走带加载态的完整加载
+  const load = useCallback(async (d: Date, silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       setDay(await fetchDay(toISODate(d)));
@@ -116,7 +128,7 @@ function App() {
       setDay(null);
       setError(e instanceof Error ? e.message : "加载失败");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -134,8 +146,8 @@ function App() {
     try {
       const reply = await sendChat(text);
       showToast(reply);
-      // 记录永远落在"现在":不在今天就跳回今天,否则原地刷新
-      if (isToday(date)) await load(date);
+      // 记录永远落在"现在":不在今天就跳回今天,否则原地静默刷新
+      if (isToday(date)) await load(date, true);
       else setDate(new Date());
       loadWeights(); // 可能记了体重,顺带刷新曲线数据
       return true;
@@ -150,7 +162,20 @@ function App() {
   const handleEdited = async (msg: string) => {
     setEditing(null);
     showToast(msg);
-    await load(date);
+    await load(date, true);
+  };
+
+  // 整菜删除=逐条删成分(raw 是唯一事实源,菜无实体),所在顿由后端增量重算
+  const handleDeleteDish = async (dish: DishEntry) => {
+    try {
+      for (const item of dish.items) {
+        await deleteRecord("food", item.id);
+      }
+      showToast(`已删除整道「${dish.name}」`);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "删除失败", true);
+    }
+    await load(date, true);
   };
 
   const meals = day?.groups.filter((g) => g.kind === "meal") ?? [];
@@ -221,12 +246,14 @@ function App() {
               groups={meals}
               delay={60}
               onItemClick={setEditing}
+              onDeleteDish={handleDeleteDish}
             />
             <Section
               kind="session"
               groups={sessions}
               delay={60 + (meals.length + 1) * 70}
               onItemClick={setEditing}
+              onDeleteDish={handleDeleteDish}
             />
             {day && day.groups.length > 0 && (
               <p className="pt-4 pb-1 text-center text-[11px] text-ink-soft/70">

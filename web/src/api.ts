@@ -1,4 +1,11 @@
-import type { DaySummary, Group, RecordItem, Source } from "@/types";
+import type {
+  DaySummary,
+  DishEntry,
+  Group,
+  GroupEntry,
+  RecordItem,
+  Source,
+} from "@/types";
 
 /** 单人使用期固定用户(2026-07-06 定案,多用户时再做选人) */
 export const USER_ID = 1;
@@ -16,6 +23,17 @@ interface ApiFoodItem {
   fiber: number | null;
   source: Source;
 }
+
+/** 餐次明细两种形态(2026-07-08 菜层):菜=成分归拢,合计后端现算 */
+interface ApiMealDish {
+  type: "dish";
+  dish_name: string;
+  total_grams: number;
+  kcal_total: number;
+  items: ApiFoodItem[];
+}
+
+type ApiMealEntry = (ApiFoodItem & { type: "food" }) | ApiMealDish;
 
 interface ApiExerciseItem {
   id: number;
@@ -44,7 +62,7 @@ interface ApiDay {
   bmr_kcal: number | null;
   burn_net_kcal: number;
   weight: number | null;
-  meals: ApiGroup<ApiFoodItem>[];
+  meals: ApiGroup<ApiMealEntry>[];
   sessions: ApiGroup<ApiExerciseItem>[];
 }
 
@@ -85,7 +103,7 @@ function foodItem(i: ApiFoodItem): RecordItem {
     id: i.id,
     kind: "food",
     name: i.food_name,
-    detail: i.grams != null ? `${+i.grams} g` : "按份记",
+    detail: i.grams != null ? `${+i.grams} g` : "—",
     kcal: kcal(i.kcal),
     kcalNet: null,
     source: i.source,
@@ -127,9 +145,23 @@ function exerciseItem(i: ApiExerciseItem): RecordItem {
   };
 }
 
+function dishEntry(d: ApiMealDish): DishEntry {
+  return {
+    kind: "dish",
+    name: d.dish_name,
+    totalGrams: d.total_grams,
+    kcalTotal: d.kcal_total,
+    items: d.items.map(foodItem),
+  };
+}
+
+function mealEntry(e: ApiMealEntry): GroupEntry {
+  return e.type === "dish" ? dishEntry(e) : foodItem(e);
+}
+
 function toGroup(
   kind: "meal" | "session",
-  g: ApiGroup<ApiFoodItem> | ApiGroup<ApiExerciseItem>,
+  g: ApiGroup<ApiMealEntry> | ApiGroup<ApiExerciseItem>,
 ): Group {
   return {
     id: g.id,
@@ -139,7 +171,7 @@ function toGroup(
     kcalTotal: g.kcal_total, // 保留小数,统一在渲染处取整,避免多处取整口径不一
     items:
       kind === "meal"
-        ? (g.items as ApiFoodItem[]).map(foodItem)
+        ? (g.items as ApiMealEntry[]).map(mealEntry)
         : (g.items as ApiExerciseItem[]).map(exerciseItem),
   };
 }

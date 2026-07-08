@@ -26,13 +26,25 @@ export interface RecordItem {
   reps: number | null;
 }
 
+/** 一道菜:带同名标签的成分归拢而成;合计后端现算,菜本身不是记录 */
+export interface DishEntry {
+  kind: "dish";
+  name: string;
+  totalGrams: number;
+  kcalTotal: number;
+  items: RecordItem[];
+}
+
+/** 组内一行:菜(可展开成分)或单品/运动记录 */
+export type GroupEntry = RecordItem | DishEntry;
+
 export interface Group {
   id: number;
   kind: "meal" | "session";
   name: string;
   timeRange: string;
   kcalTotal: number;
-  items: RecordItem[];
+  items: GroupEntry[];
 }
 
 export interface DaySummary {
