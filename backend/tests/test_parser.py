@@ -267,3 +267,11 @@ def test_克重守恒_普通单品与合规菜零违规():
         items=[ParsedFood(spoken_name="鸡胸肉", name="鸡胸脯肉", grams=200), _dish()]
     )
     assert parser.conservation_violations(output) == []
+
+
+def test_候选搜索_代表值后缀不淹没主名召回():
+    # 模型给"辣椒(代表值)"但表里无此条,应剥主名"辣椒"召回辣椒品种,
+    # 不被别的"XX(代表值)"淹没(修复:辣椒曾因此走 llm_estimated)
+    cands = lookup.candidate_foods("辣椒(代表值)")
+    assert any(c.startswith("辣椒(") for c in cands)
+    assert not any("代表值" in c for c in cands)

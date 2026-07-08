@@ -167,7 +167,11 @@ def candidate_foods(query: str, limit: int = 8) -> list[str]:
     纯子串匹配抓不住"鸡胸肉→鸡胸脯肉"这类插字变体,故用字符集重合度;
     子串命中额外加权置顶。
     """
-    q = _norm(query)
+    # 用括号前主名召回:模型常给"辣椒(代表值)"这类名字,而表里该类并无代表值条目,
+    # 若带"代表值"等后缀算字符重合度会被同后缀的别的食物("桃(代表值)"…)淹没,
+    # 反而召回不到辣椒本身。剥到主名再召回,长尾食物才能进候选裁决。
+    q_full = _norm(query)
+    q = q_full.split("(")[0] or q_full
     if not q:
         return []
     q_chars = set(q)
