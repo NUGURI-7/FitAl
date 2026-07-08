@@ -118,7 +118,7 @@ export function ItemSheet({
 
   return (
     <Sheet title={item.name} onClose={onClose}>
-      <div className="flex items-center gap-2 pb-3">
+      <div className="flex items-center gap-2 pb-1">
         <SourceBadge source={item.source} />
         <span className="text-[12px] text-ink-soft">{item.detail}</span>
         {item.kcalNet != null && (
@@ -127,6 +127,11 @@ export function ItemSheet({
           </span>
         )}
       </div>
+      {item.rawName && (
+        <p className="pb-2 text-[11px] text-ink-soft/70">
+          成分表名:{item.rawName}
+        </p>
+      )}
 
       {nutrition.length > 0 && (
         <div className="mb-3 grid grid-cols-4 divide-x divide-hairline rounded-xl bg-card py-2.5 ring-1 ring-black/[0.04]">

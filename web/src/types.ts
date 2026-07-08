@@ -8,7 +8,10 @@ export type Source =
 export interface RecordItem {
   id: number;
   kind: "food" | "exercise";
+  /** 展示名:食物已去掉编制术语后缀;详情用 rawName 补全 */
   name: string;
+  /** 完整原始名(成分表学名);仅当与 name 不同时有值,详情里展示 */
+  rawName: string | null;
   /** 份量描述:"150 g" / "60kg × 12" / "30 分钟" / "1 勺" */
   detail: string;
   kcal: number;

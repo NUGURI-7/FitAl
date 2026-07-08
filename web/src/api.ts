@@ -1,3 +1,4 @@
+import { cleanFoodName } from "@/lib/foodName";
 import type {
   DaySummary,
   DishEntry,
@@ -99,10 +100,12 @@ function timeRange(start: string, end: string): string {
 const kcal = (n: number) => Math.round(n);
 
 function foodItem(i: ApiFoodItem): RecordItem {
+  const name = cleanFoodName(i.food_name);
   return {
     id: i.id,
     kind: "food",
-    name: i.food_name,
+    name,
+    rawName: name !== i.food_name ? i.food_name : null,
     detail: i.grams != null ? `${+i.grams} g` : "—",
     kcal: kcal(i.kcal),
     kcalNet: null,
@@ -130,6 +133,7 @@ function exerciseItem(i: ApiExerciseItem): RecordItem {
     id: i.id,
     kind: "exercise",
     name: i.exercise_name,
+    rawName: null,
     detail: parts.join(" · ") || "—",
     kcal: kcal(i.kcal),
     kcalNet: i.kcal_net != null ? kcal(i.kcal_net) : null,
