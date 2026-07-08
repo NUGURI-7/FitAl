@@ -39,7 +39,8 @@
 7. **不接入外部 agent 平台,不用 LangGraph/LangChain 等编排框架**;AI 逻辑收敛在 `app/ai/`,编排=顺序函数调用
    - **读写不对称**(2026-07-02 定):写路径=管线+每步微循环(schema 校验/查表命中为硬反馈,失败带错重试,重试尽降级 llm_estimated),笔在代码手里;读路径(后续读代理)=PydanticAI 只读工具 agent,模型有完全自由——只读结构上无害
 8. **数据库迁移用 Tortoise 内置迁移系统**(`tortoise init / makemigrations / migrate`);不依赖 generate_schemas 自动建表
-9. **LLM 选型**(2026-07-03 用户扩定为通用接入):PydanticAI + **任意 OpenAI 兼容端点**,不绑定单一供应商。`.env` 四项:`LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`(**允许空**,兼容无鉴权本地部署)/ `LLM_EXTRA_BODY`(端点私有参数 JSON,可空)。当前默认 deepseek-v4-flash(需 `{"thinking":{"type":"disabled"}}` 关思考模式才能用结构化输出;旧 deepseek-chat 2026/07/24 弃用勿选)。换端点只改 `.env` 不改代码
+9. **禁止 prompt hack**(2026-07-08 用户定):提示词只承载真正属于语言理解的职责(口语映射、明说信息的提取、个人叫法换算);凡能用输出 schema 字段、表数据、代码校验、封闭候选裁决解决的问题,一律结构化解决,不得用提示词打补丁
+10. **LLM 选型**(2026-07-03 用户扩定为通用接入):PydanticAI + **任意 OpenAI 兼容端点**,不绑定单一供应商。`.env` 四项:`LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`(**允许空**,兼容无鉴权本地部署)/ `LLM_EXTRA_BODY`(端点私有参数 JSON,可空)。当前默认 deepseek-v4-flash(需 `{"thinking":{"type":"disabled"}}` 关思考模式才能用结构化输出;旧 deepseek-chat 2026/07/24 弃用勿选)。换端点只改 `.env` 不改代码
    - 程序内语音输入(流式 STT,WebSocket,不做整段往返)排在前端阶段,后端当前不实现;流式语音厂商用户已选定(待告知接入)
    - **模型设置界面永久不做**(2026-07-07 用户定):不支持用户自定义/切换模型,模型全局唯一,换模型=管理员改 `.env`;key 永不暴露给前端
    - **不做思考过程展示**(2026-07-04 用户定):写路径思考模式必须关(与结构化输出冲突),回复为模板拼接;将来有真实需求再议
