@@ -117,6 +117,41 @@ async def test_运动改时长_按MET重算总耗净耗(db):
     assert session.kcal_total == pytest.approx(69.7)
 
 
+async def test_改体重_只改公斤数时间戳不动(db):
+    user = await _user()
+    rec = await WeightRecord.filter(user=user).first()  # _user 里建的 70kg
+    before = rec.created_at
+    card = await api.patch_weight(rec.id, api.WeightPatch(weight_kg=72.5))
+    assert card == {"type": "weight", "id": rec.id, "weight_kg": 72.5}
+    await rec.refresh_from_db()
+    assert rec.weight_kg == 72.5
+    assert rec.created_at == before
+
+
+async def test_改体重_记录不存在报404(db):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as e:
+        await api.patch_weight(99999, api.WeightPatch(weight_kg=70))
+    assert e.value.status_code == 404
+
+
+async def test_删体重_记录消失(db):
+    user = await _user()
+    rec = await WeightRecord.filter(user=user).first()
+    res = await api.delete_weight(rec.id)
+    assert res == {"deleted": rec.id}
+    assert await WeightRecord.get_or_none(id=rec.id) is None
+
+
+async def test_删体重_记录不存在报404(db):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as e:
+        await api.delete_weight(99999)
+    assert e.value.status_code == 404
+
+
 async def test_运动直接改热量_净耗按时长扣基础代谢(db):
     user = await _user()
     rec = await ExerciseRecord.create(

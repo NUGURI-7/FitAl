@@ -288,7 +288,13 @@ function App() {
       )}
       {showWeights && (
         <Suspense fallback={null}>
-          <WeightSheet onClose={() => setShowWeights(false)} />
+          <WeightSheet
+            onClose={() => setShowWeights(false)}
+            onChanged={() => {
+              loadWeights();
+              load(date, true); // 英雄区体重/基础代谢可能受影响,静默刷新
+            }}
+          />
         </Suspense>
       )}
     </div>

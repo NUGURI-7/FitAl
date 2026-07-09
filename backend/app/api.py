@@ -308,6 +308,10 @@ class ExercisePatch(BaseModel):
     kcal: float | None = None
 
 
+class WeightPatch(BaseModel):
+    weight_kg: float
+
+
 def _food_desc(rec: FoodRecord) -> str:
     grams = f"{rec.grams:g}g" if rec.grams else ""
     return f"{rec.food_name}{grams}≈{rec.kcal:g}千卡"
@@ -481,6 +485,26 @@ async def delete_exercise(record_id: int) -> dict:
     session = await Session.get_or_none(id=session_id) if session_id else None
     if session:
         await aggregate.recompute_session(session)
+    return {"deleted": record_id}
+
+
+@router.patch("/records/weight/{record_id}")
+async def patch_weight(record_id: int, body: WeightPatch) -> dict:
+    """修正体重记录:只改公斤数,时间戳不动;派生数字(基础代谢/曲线)读时现算,无需联动。"""
+    rec = await WeightRecord.get_or_none(id=record_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    rec.weight_kg = body.weight_kg
+    await rec.save()
+    return {"type": "weight", "id": rec.id, "weight_kg": rec.weight_kg}
+
+
+@router.delete("/records/weight/{record_id}")
+async def delete_weight(record_id: int) -> dict:
+    rec = await WeightRecord.get_or_none(id=record_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    await rec.delete()
     return {"deleted": record_id}
 
 

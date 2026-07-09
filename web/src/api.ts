@@ -197,9 +197,10 @@ export async function fetchDay(dateISO: string): Promise<DaySummary> {
   };
 }
 
-/** 修正记录:饮食传 grams/kcal,运动传 duration_min/load_kg/reps/kcal;只发改动的字段 */
+/** 修正记录:饮食传 grams/kcal,运动传 duration_min/load_kg/reps/kcal,
+ * 体重传 weight_kg;只发改动的字段 */
 export async function patchRecord(
-  kind: "food" | "exercise",
+  kind: "food" | "exercise" | "weight",
   id: number,
   body: Record<string, number>,
 ): Promise<void> {
@@ -211,22 +212,23 @@ export async function patchRecord(
 }
 
 export async function deleteRecord(
-  kind: "food" | "exercise",
+  kind: "food" | "exercise" | "weight",
   id: number,
 ): Promise<void> {
   await requestJSON(`/api/records/${kind}/${id}`, { method: "DELETE" });
 }
 
 export interface WeightPoint {
+  id: number;
   at: Date;
   kg: number;
 }
 
 export async function fetchWeights(days = 30): Promise<WeightPoint[]> {
   const d = await requestJSON(`/api/weights?user_id=${USER_ID}&days=${days}`);
-  return (d.weights as { weight_kg: number; created_at: string }[]).map(
-    (w) => ({ at: new Date(w.created_at), kg: w.weight_kg }),
-  );
+  return (
+    d.weights as { id: number; weight_kg: number; created_at: string }[]
+  ).map((w) => ({ id: w.id, at: new Date(w.created_at), kg: w.weight_kg }));
 }
 
 /** 发一句话记录:走对话接口(SSE),返回后端的模板回执 */
