@@ -23,6 +23,8 @@ struct HomeView: View {
     @State private var toast: String?
     @State private var sendCount = 0
     @State private var expandedDishes: Set<String> = []
+    @State private var armedDishID: String?
+    @State private var dishDeleting = false
     @State private var selected: SelectedRecord?
     @State private var deleteCount = 0
     @State private var showWeightSheet = false
@@ -371,45 +373,49 @@ struct HomeView: View {
         }
     }
 
-    /// 菜行:点击展开/收起成分清单(成分缩进,弹簧过渡)
+    /// 菜行:点击展开/收起成分清单(成分缩进,弹簧过渡);行尾垃圾桶两击删整菜
     @ViewBuilder
     private func dishRows(_ d: Dish, entryID: String) -> some View {
         let expanded = expandedDishes.contains(entryID)
 
-        Button {
-            withAnimation(.spring(duration: 0.45)) {
-                if expanded {
-                    expandedDishes.remove(entryID)
-                } else {
-                    expandedDishes.insert(entryID)
+        HStack(spacing: 6) {
+            Button {
+                withAnimation(.spring(duration: 0.45)) {
+                    if expanded {
+                        expandedDishes.remove(entryID)
+                    } else {
+                        expandedDishes.insert(entryID)
+                    }
                 }
-            }
-        } label: {
-            HStack {
-                Circle()
-                    .fill(Theme.intake.opacity(0.5))
-                    .frame(width: 5, height: 5)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(d.dishName)
-                        .font(.system(size: 15, weight: .medium))
+            } label: {
+                HStack {
+                    Circle()
+                        .fill(Theme.intake.opacity(0.5))
+                        .frame(width: 5, height: 5)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(d.dishName)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("\(Int(d.totalGrams.rounded())) 克 · \(d.items.count) 成分")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Text("\(Int(d.kcalTotal.rounded()))")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(Theme.textPrimary)
-                    Text("\(Int(d.totalGrams.rounded())) 克 · \(d.items.count) 成分")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.textSecondary)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary.opacity(0.6))
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
-                Spacer()
-                Text("\(Int(d.kcalTotal.rounded()))")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Theme.textPrimary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary.opacity(0.6))
-                    .rotationEffect(.degrees(expanded ? 180 : 0))
+                .contentShape(.rect)
             }
-            .padding(.vertical, 8)
-            .contentShape(.rect)
+            .buttonStyle(PressableStyle())
+
+            dishDeleteButton(d, entryID: entryID)
         }
-        .buttonStyle(PressableStyle())
+        .padding(.vertical, 8)
 
         if expanded {
             VStack(spacing: 0) {
@@ -442,6 +448,61 @@ struct HomeView: View {
                 }
             }
             .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    /// 菜行整删:两击确认(第一击浮出暖橙玻璃"确认"胶囊,3 秒缩回,与设置页同族)
+    @ViewBuilder
+    private func dishDeleteButton(_ d: Dish, entryID: String) -> some View {
+        if armedDishID == entryID {
+            Button {
+                deleteDish(d)
+            } label: {
+                Text("确认")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            }
+            .glassEffect(.regular.tint(Theme.burn).interactive(), in: .capsule)
+            .disabled(dishDeleting)
+            .transition(.scale(scale: 0.6).combined(with: .opacity))
+        } else {
+            Button {
+                withAnimation(.spring(duration: 0.3)) { armedDishID = entryID }
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    if armedDishID == entryID {
+                        withAnimation(.spring(duration: 0.3)) { armedDishID = nil }
+                    }
+                }
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary.opacity(0.5))
+                    .frame(width: 26, height: 26)
+                    .contentShape(.rect)
+            }
+            .disabled(dishDeleting)
+        }
+    }
+
+    /// 菜不是实体,整删=逐条删成分(raw 唯一事实源),所在顿由后端增量重算
+    private func deleteDish(_ d: Dish) {
+        armedDishID = nil
+        dishDeleting = true
+        Task {
+            do {
+                for item in d.items {
+                    try await API.deleteRecord(kind: "food", id: item.id)
+                }
+                deleteCount += 1
+                showToast("已删除整道「\(d.dishName)」")
+            } catch {
+                showToast("删除失败:\(error.localizedDescription)")
+            }
+            await load()
+            dishDeleting = false
         }
     }
 
