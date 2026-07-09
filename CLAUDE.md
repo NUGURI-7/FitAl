@@ -104,6 +104,10 @@ PATCH  /records/exercise/{id} | /records/food/{id}   # 修正,只落 raw
 DELETE 同路径                          # 删记录(如删自动补的油)
   修正/删除均触发所在聚合增量重算
 
+PATCH  /records/weight/{id}            # 改体重(2026-07-09):只收 weight_kg,时间戳不动
+DELETE 同路径                          # 删体重。二者无任何联动重算:
+                                       # 派生数字(基础代谢/净摄入/曲线)均读时现算
+
 GET /days/{date}?user_id=1             # 数据展示主接口,只读 new 层
   { "intake_kcal", "burn_kcal", "weight",
     "bmr_kcal",        # 全天基础代谢(2026-07-07 加):该日结束前最近体重+档案算,无体重为空
