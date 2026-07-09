@@ -6,3 +6,8 @@ __pycache__/
 .env
 .pytest_cache/
 .ruff_cache/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
