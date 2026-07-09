@@ -27,6 +27,11 @@ struct HomeView: View {
     @State private var deleteCount = 0
     @State private var showWeightSheet = false
 
+    @State private var profile: UserProfile?
+    @State private var menuOpen = false
+    @State private var showSettings = false
+    @Namespace private var menuGlassNS
+
     private let minuteTick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -42,12 +47,32 @@ struct HomeView: View {
                 }
             }
             .background(BreathingBackground())
+            .overlay {
+                // 菜单开着时点屏幕其他地方收起(与 Web 的全屏点击捕获层同责)
+                if menuOpen {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(duration: 0.35)) { menuOpen = false }
+                        }
+                }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
+            .navigationDestination(isPresented: $showSettings) {
+                if let profile {
+                    SettingsView(profile: profile) {
+                        // 保存档案后:球上首字跟新,主页现算数字静默刷新
+                        if let fresh = try? await API.fetchUser() { self.profile = fresh }
+                        await load()
+                    }
+                }
+            }
             .toolbar { dateToolbar }
             .toolbarTitleDisplayMode(.inline)
         }
         .sensoryFeedback(.success, trigger: sendCount)
         .sensoryFeedback(.impact, trigger: deleteCount)
+        .sensoryFeedback(.impact(weight: .light), trigger: menuOpen)
         .sheet(item: $selected) { record in
             RecordSheet(record: record) {
                 deleteCount += 1
@@ -61,6 +86,7 @@ struct HomeView: View {
             }
         }
         .task(id: dayOffset) { await load() }
+        .task { profile = try? await API.fetchUser() } // 头像球首字;失败不显示球,不打扰主链路
         .onReceive(minuteTick) { _ in
             if dayOffset == 0 { applyHero(animated: false) }
         }
@@ -563,6 +589,14 @@ struct HomeView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
+            // 头像球悬浮菜单:输入条上方靠左,照搬 Web(点球浮出齿轮,点齿轮进设置页)
+            if profile != nil {
+                HStack {
+                    menuCluster
+                    Spacer()
+                }
+            }
+
             GlassEffectContainer(spacing: 12) {
                 HStack(spacing: 12) {
                     TextField("说一句,记一笔", text: $inputText)
@@ -580,6 +614,44 @@ struct HomeView: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .animation(.spring(duration: 0.4), value: toast)
+    }
+
+    // MARK: - 头像球菜单(液态玻璃,齿轮从球里长出来;后续新功能继续往上摞球)
+
+    private var avatarInitial: String {
+        let first = profile?.nickname.trimmingCharacters(in: .whitespaces).first
+        return first.map(String.init) ?? "我"
+    }
+
+    private var menuCluster: some View {
+        GlassEffectContainer(spacing: 16) {
+            VStack(spacing: 10) {
+                if menuOpen {
+                    Button {
+                        withAnimation(.spring(duration: 0.35)) { menuOpen = false }
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .frame(width: 40, height: 40)
+                    }
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .glassEffectID("menu-gear", in: menuGlassNS)
+                }
+
+                Button {
+                    withAnimation(.spring(duration: 0.4)) { menuOpen.toggle() }
+                } label: {
+                    Text(avatarInitial)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .frame(width: 44, height: 44)
+                }
+                .glassEffect(.regular.interactive(), in: .circle)
+                .glassEffectID("menu-avatar", in: menuGlassNS)
+            }
+        }
     }
 
     // MARK: - 数据加载与口径计算

@@ -27,6 +27,58 @@ enum API {
         return try decoder.decode(APIDay.self, from: data)
     }
 
+    /// 读身体档案:头像球首字与设置页都用它
+    static func fetchUser() async throws -> UserProfile {
+        let url = base.appending(path: "users/\(userID)")
+        let (data, resp) = try await session.data(from: url)
+        try ensureOK(resp, data: data)
+        return try decoder.decode(UserProfile.self, from: data)
+    }
+
+    /// 改身体档案:只发改动的字段;昵称重名后端回 409,提示语透传
+    static func patchUser(_ patch: UserPatch) async throws {
+        var req = URLRequest(url: base.appending(path: "users/\(userID)"))
+        req.httpMethod = "PATCH"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(patch)
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data)
+    }
+
+    /// 设置页·自定义食物列表(后端按更新时间倒序)
+    static func fetchUserFoods() async throws -> [UserFoodItem] {
+        var url = base.appending(path: "user-foods")
+        url.append(queryItems: [URLQueryItem(name: "user_id", value: "\(userID)")])
+        let (data, resp) = try await session.data(from: url)
+        try ensureOK(resp, data: data)
+        return try decoder.decode(UserFoodsResponse.self, from: data).foods
+    }
+
+    /// 删自定义食物:只影响以后的解析,已存记录数字不动
+    static func deleteUserFood(id: Int) async throws {
+        var req = URLRequest(url: base.appending(path: "user-foods/\(id)"))
+        req.httpMethod = "DELETE"
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data)
+    }
+
+    /// 设置页·AI 记忆列表
+    static func fetchMemories() async throws -> [MemoryItem] {
+        var url = base.appending(path: "memories")
+        url.append(queryItems: [URLQueryItem(name: "user_id", value: "\(userID)")])
+        let (data, resp) = try await session.data(from: url)
+        try ensureOK(resp, data: data)
+        return try decoder.decode(MemoriesResponse.self, from: data).memories
+    }
+
+    /// 删记忆:即停止注入解析
+    static func deleteMemory(id: Int) async throws {
+        var req = URLRequest(url: base.appending(path: "memories/\(id)"))
+        req.httpMethod = "DELETE"
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data)
+    }
+
     static func fetchWeights(days: Int = 30) async throws -> [WeightPoint] {
         var url = base.appending(path: "weights")
         url.append(queryItems: [
@@ -132,6 +184,66 @@ private struct ChatIn: Encodable {
 
 private struct ReplyData: Decodable { let text: String }
 private struct ErrorDetail: Decodable { let detail: String }
+
+/// 身体档案(GET /users/{id}):昵称给头像球,其余供设置页读改
+struct UserProfile: Decodable {
+    let id: Int
+    let nickname: String
+    let heightCm: Double
+    let sex: String
+    let birthYear: Int
+}
+
+/// PATCH /users/{id} 请求体:字段全部可空,只编码改动了的字段
+struct UserPatch: Encodable {
+    var nickname: String?
+    var heightCm: Double?
+    var sex: String?
+    var birthYear: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case nickname, sex
+        case heightCm = "height_cm"
+        case birthYear = "birth_year"
+    }
+
+    var isEmpty: Bool {
+        nickname == nil && heightCm == nil && sex == nil && birthYear == nil
+    }
+}
+
+/// 自定义食物(每100克口径,与官方表同构)
+struct UserFoodItem: Decodable, Identifiable {
+    let id: Int
+    let name: String
+    let form: String?
+    let kcal: Double
+    let updatedAt: String
+
+    var at: Date { parseISOTimestamp(updatedAt) ?? .distantPast }
+}
+
+private struct UserFoodsResponse: Decodable { let foods: [UserFoodItem] }
+
+/// AI 记忆(kind: alias 叫法 | habit 习惯 | correction 纠正)
+struct MemoryItem: Decodable, Identifiable {
+    let id: Int
+    let kind: String
+    let content: String
+    let updatedAt: String
+
+    var at: Date { parseISOTimestamp(updatedAt) ?? .distantPast }
+}
+
+private struct MemoriesResponse: Decodable { let memories: [MemoryItem] }
+
+/// ISO 时间戳解析(带/不带小数秒两种格式都收)
+func parseISOTimestamp(_ s: String) -> Date? {
+    let f1 = ISO8601DateFormatter()
+    f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let d = f1.date(from: s) { return d }
+    return ISO8601DateFormatter().date(from: s)
+}
 
 struct APIDay: Decodable {
     let date: String
