@@ -146,13 +146,14 @@ GET /users 列表  /  POST /users        # 暂缓(2026-07-06 用户定):单人�
 2. **算术归代码,判断归 AI**(2026-07-04 用户定;2026-07-07 用户再改,餐次收回给代码):求和/公式是代码。**餐次=时段制,纯代码零 AI**——用户明说哪顿归哪顿(AI 只负责从话里提取明说的槽:早餐/午餐/下午茶/晚餐/其余,没明说不填),否则按本地时钟落固定时段(早5-10/午10-15/下午茶15-17/晚17-22/其余22-5);组名=时段名,一天每槽至多一组,同槽自动合并。**AI 归组仅保留运动场次**——解析时附带"当天开放场次摘要+当前时间",AI 判断延续/新开并起名,没给名按时段兜底
 3. **聚合在写入时增量触发**:每次入库顺带归组;展示接口零 AI 调用
 
-七张表:
+八张表:
 - `users`:昵称、身高、性别、出生年份(修正 MET 公式用;体重不放这里)
-- `weight_records`:user / weight_kg / created_at。"当前体重"=最新一条,消耗计算取它,体重曲线由此出
+- `inputs`(输入表,2026-07-10 定):user / text(原话全文) / status(pending|ok|partial|failed,整句失败也留底) / ai_rounds(各轮 AI 原始吐出 JSON 存档,纯日志仅供错例回放,业务数据照旧走正规表列) / created_at。一次输入一行,raw 记录挂 input_id 指回(一句话→多记录);删输入行不动 raw
+- `weight_records`:user / weight_kg / input_id(可空) / created_at。"当前体重"=最新一条,消耗计算取它,体重曲线由此出
 
 raw 层(碎片粒度,怎么说的怎么存,"鸡蛋100g"一条、"卧推60kg×10"一条):
-- `exercise_records`:user / raw_text / source / kcal(总耗) / kcal_net(净耗) / created_at + exercise_name / met / duration_min / load_kg(可空) / reps(可空) + session_id(可空)
-- `food_records`:user / raw_text / source / kcal / created_at + food_name / grams / protein / fat / cho / fiber + dish(所属菜名,可空;同菜成分同名,菜合计现算不建表)+ meal_id(可空)
+- `exercise_records`:user / raw_text / source / kcal(总耗) / kcal_net(净耗) / created_at + exercise_name / met / duration_min / load_kg(可空) / reps(可空) + session_id / input_id(均可空)
+- `food_records`:user / raw_text / source / kcal / created_at + food_name / grams / protein / fat / cho / fiber + dish(所属菜名,可空;同菜成分同名,菜合计现算不建表)+ meal_id / input_id(均可空)
 
 new 层(聚合粒度,AI+规则维护,可重算):
 - `meals`:user / name(AI 起名) / start / end / kcal_total

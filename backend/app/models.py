@@ -21,10 +21,37 @@ class WeightRecord(Model):
         "models.User", related_name="weight_records", on_delete=fields.CASCADE
     )
     weight_kg = fields.FloatField()
+    # 来自哪次输入;老数据为空。删输入行不动 raw(raw 是唯一事实源)
+    input = fields.ForeignKeyField(
+        "models.Input", related_name="weight_records", null=True,
+        on_delete=fields.SET_NULL,
+    )
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "weight_records"
+
+
+class Input(Model):
+    """输入表:一次原始输入一行,raw 记录挂外键指回(一句话→多记录)。
+
+    失败也留底(此前整句炸连原话都不剩);ai_rounds 存各轮 AI 原始吐出,
+    纯日志只为错例回放,业务数据照旧走正规表列。
+    """
+
+    id = fields.IntField(primary_key=True)
+    user = fields.ForeignKeyField(
+        "models.User", related_name="inputs", on_delete=fields.CASCADE
+    )
+    text = fields.TextField()  # 原话全文,永久保留
+    status = fields.CharField(
+        max_length=16, default="pending"
+    )  # pending | ok | partial | failed
+    ai_rounds = fields.JSONField(null=True)  # {轮名: 原始输出} 错例回放用
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "inputs"
 
 
 # ── new 层:聚合粒度,AI+规则维护,可随时从 raw 整层重算 ──────────────────
@@ -81,6 +108,10 @@ class ExerciseRecord(Model):
     session = fields.ForeignKeyField(
         "models.Session", related_name="items", null=True, on_delete=fields.SET_NULL
     )
+    input = fields.ForeignKeyField(
+        "models.Input", related_name="exercise_records", null=True,
+        on_delete=fields.SET_NULL,
+    )
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -108,6 +139,10 @@ class FoodRecord(Model):
     fiber = fields.FloatField(null=True)
     meal = fields.ForeignKeyField(
         "models.Meal", related_name="items", null=True, on_delete=fields.SET_NULL
+    )
+    input = fields.ForeignKeyField(
+        "models.Input", related_name="food_records", null=True,
+        on_delete=fields.SET_NULL,
     )
     created_at = fields.DatetimeField(auto_now_add=True)
 
