@@ -83,9 +83,23 @@ body {
   .rise,
   .unfold,
   .sheet-up,
+  .page-in,
   .fade-in {
     animation: none;
   }
+}
+
+/* 整页从右滑入(设置页) */
+@keyframes page-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.page-in {
+  animation: page-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 /* 底部抽屉 */

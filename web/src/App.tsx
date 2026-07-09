@@ -1,16 +1,19 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Dumbbell, NotebookPen, UtensilsCrossed } from "lucide-react";
+import { Dumbbell, NotebookPen, Settings, UtensilsCrossed } from "lucide-react";
 import {
   deleteRecord,
   fetchDay,
+  fetchUser,
   fetchWeights,
   sendChat,
+  type UserProfile,
   type WeightPoint,
 } from "@/api";
 import { GroupCard } from "@/components/GroupCard";
 import { Hero } from "@/components/Hero";
 import { InputBar } from "@/components/InputBar";
 import { ItemSheet } from "@/components/ItemSheet";
+import { SettingsPage } from "@/components/SettingsPage";
 import { TopBar } from "@/components/TopBar";
 import { addDays, dateLabel, isToday, subLabel, toISODate } from "@/lib/date";
 import type { DaySummary, DishEntry, Group, RecordItem } from "@/types";
@@ -105,6 +108,9 @@ function App() {
   const [sending, setSending] = useState(false);
   const [editing, setEditing] = useState<RecordItem | null>(null);
   const [showWeights, setShowWeights] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(
     null,
   );
@@ -140,6 +146,18 @@ function App() {
     fetchWeights().then(setWeights).catch(() => setWeights(null));
   }, []);
   useEffect(loadWeights, [loadWeights]);
+
+  const loadProfile = useCallback(() => {
+    fetchUser().then(setProfile).catch(() => setProfile(null));
+  }, []);
+  useEffect(loadProfile, [loadProfile]);
+
+  // 保存档案后设置页留在原地(独立页面,用户自己返回);球上首字与主页数字静默跟新
+  const handleProfileSaved = async (msg: string) => {
+    showToast(msg);
+    loadProfile();
+    await load(date, true); // 档案影响基础代谢等现算数字,静默刷新
+  };
 
   const handleSend = async (text: string): Promise<boolean> => {
     setSending(true);
@@ -266,7 +284,7 @@ function App() {
 
       {/* 回执气泡 */}
       {toast && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-20 z-30 flex justify-center px-6">
+        <div className="pointer-events-none fixed inset-x-0 bottom-20 z-50 flex justify-center px-6">
           <div
             className={`rise max-w-md rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed shadow-lg ring-1 ring-black/[0.06] ${
               toast.error ? "bg-burn text-white" : "bg-ink text-paper"
@@ -277,6 +295,53 @@ function App() {
         </div>
       )}
 
+      {/* 头像球=悬浮菜单开关:点开浮出小球(现仅"设置",后续可加),点小球进对应界面 */}
+      {profile && (
+        <>
+          {menuOpen && (
+            <button
+              type="button"
+              aria-label="收起菜单"
+              onClick={() => setMenuOpen(false)}
+              className="fixed inset-0 z-20 cursor-default"
+            />
+          )}
+          <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.25rem)] z-30">
+            <div className="mx-auto flex max-w-md flex-col items-start gap-2.5 px-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setShowSettings(true);
+                }}
+                aria-label="设置"
+                className={`relative flex size-10 items-center justify-center overflow-hidden rounded-full bg-paper/55 text-ink shadow-[0_6px_20px_rgba(38,35,29,0.16)] ring-1 ring-black/[0.08] backdrop-blur-xl transition-all duration-200 ease-out ${
+                  menuOpen
+                    ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
+                    : "pointer-events-none translate-y-4 scale-50 opacity-0"
+                }`}
+              >
+                <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.9),rgba(255,255,255,0)_60%)]" />
+                <Settings size={17} className="relative" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((o) => !o)}
+                aria-label="菜单"
+                className={`rise pointer-events-auto relative flex size-11 items-center justify-center overflow-hidden rounded-full bg-paper/55 text-[16px] font-bold shadow-[0_6px_20px_rgba(38,35,29,0.16)] ring-1 ring-black/[0.08] backdrop-blur-xl transition-transform duration-200 active:scale-90 ${
+                  menuOpen ? "scale-95" : ""
+                }`}
+              >
+                <span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.9),rgba(255,255,255,0)_60%)]" />
+                <span className="relative">
+                  {profile.nickname.trim().charAt(0) || "我"}
+                </span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       <InputBar sending={sending} onSend={handleSend} />
 
       {editing && (
@@ -284,6 +349,13 @@ function App() {
           item={editing}
           onClose={() => setEditing(null)}
           onDone={handleEdited}
+        />
+      )}
+      {showSettings && profile && (
+        <SettingsPage
+          profile={profile}
+          onClose={() => setShowSettings(false)}
+          onSaved={handleProfileSaved}
         />
       )}
       {showWeights && (

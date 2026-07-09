@@ -218,6 +218,96 @@ export async function deleteRecord(
   await requestJSON(`/api/records/${kind}/${id}`, { method: "DELETE" });
 }
 
+export interface UserProfile {
+  id: number;
+  nickname: string;
+  heightCm: number;
+  sex: "male" | "female";
+  birthYear: number;
+}
+
+export async function fetchUser(): Promise<UserProfile> {
+  const d = await requestJSON(`/api/users/${USER_ID}`);
+  return {
+    id: d.id,
+    nickname: d.nickname,
+    heightCm: d.height_cm,
+    sex: d.sex,
+    birthYear: d.birth_year,
+  };
+}
+
+/** 改身体档案:只发改动的字段(nickname/height_cm/sex/birth_year) */
+export async function patchUser(
+  body: Record<string, string | number>,
+): Promise<void> {
+  await requestJSON(`/api/users/${USER_ID}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface UserFoodItem {
+  id: number;
+  name: string;
+  form: string | null;
+  /** 每100克热量 */
+  kcal: number;
+  updatedAt: Date;
+}
+
+export async function fetchUserFoods(): Promise<UserFoodItem[]> {
+  const d = await requestJSON(`/api/user-foods?user_id=${USER_ID}`);
+  return (
+    d.foods as {
+      id: number;
+      name: string;
+      form: string | null;
+      kcal: number;
+      updated_at: string;
+    }[]
+  ).map((f) => ({
+    id: f.id,
+    name: f.name,
+    form: f.form,
+    kcal: f.kcal,
+    updatedAt: new Date(f.updated_at),
+  }));
+}
+
+export async function deleteUserFood(id: number): Promise<void> {
+  await requestJSON(`/api/user-foods/${id}`, { method: "DELETE" });
+}
+
+export interface MemoryItem {
+  id: number;
+  kind: "alias" | "habit" | "correction";
+  content: string;
+  updatedAt: Date;
+}
+
+export async function fetchMemories(): Promise<MemoryItem[]> {
+  const d = await requestJSON(`/api/memories?user_id=${USER_ID}`);
+  return (
+    d.memories as {
+      id: number;
+      kind: MemoryItem["kind"];
+      content: string;
+      updated_at: string;
+    }[]
+  ).map((m) => ({
+    id: m.id,
+    kind: m.kind,
+    content: m.content,
+    updatedAt: new Date(m.updated_at),
+  }));
+}
+
+export async function deleteMemory(id: number): Promise<void> {
+  await requestJSON(`/api/memories/${id}`, { method: "DELETE" });
+}
+
 export interface WeightPoint {
   id: number;
   at: Date;

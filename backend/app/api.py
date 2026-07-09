@@ -1,12 +1,14 @@
 import json
 import logging
 from datetime import UTC, date, datetime, timedelta
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from tortoise import Tortoise, timezone
+from tortoise.exceptions import IntegrityError
 
 from app.ai import aggregate, lookup, parser
 from app.ai.schema import ParsedMemory, ParsedUserFoodDef
@@ -673,3 +675,118 @@ async def weight_curve(user_id: int, days: int = 30) -> dict:
             for r in rows
         ],
     }
+
+
+# ── 设置页(2026-07-09):身体档案读改 ─────────────────────────────────────
+
+
+class UserPatch(BaseModel):
+    nickname: str | None = Field(default=None, min_length=1, max_length=50)
+    height_cm: float | None = Field(default=None, gt=0)
+    sex: Literal["male", "female"] | None = None
+    birth_year: int | None = None
+
+
+def _user_out(user: User) -> dict:
+    return {
+        "id": user.id,
+        "nickname": user.nickname,
+        "height_cm": user.height_cm,
+        "sex": user.sex,
+        "birth_year": user.birth_year,
+    }
+
+
+@router.get("/users/{user_id}")
+async def get_user(user_id: int) -> dict:
+    user = await User.get_or_none(id=user_id)
+    if user is None:
+        raise HTTPException(404, "用户不存在")
+    return _user_out(user)
+
+
+@router.patch("/users/{user_id}")
+async def patch_user(user_id: int, body: UserPatch) -> dict:
+    """改身体档案:只发改动的字段;不回算任何已存记录,
+    读时现算的数字(基础代谢/净摄入)自然采用新档案。"""
+    user = await User.get_or_none(id=user_id)
+    if user is None:
+        raise HTTPException(404, "用户不存在")
+    changes = body.model_dump(exclude_none=True)
+    if not changes:
+        raise HTTPException(422, "至少提供一个要修改的字段")
+    for field, value in changes.items():
+        setattr(user, field, value)
+    try:
+        await user.save()
+    except IntegrityError:
+        raise HTTPException(409, "昵称已被占用") from None
+    return _user_out(user)
+
+
+# ── 设置页(2026-07-09):自定义食物查删。改数值不设接口——
+# 对话里重复"记住"即按名覆盖(user+name 唯一约束) ─────────────────────────
+
+
+@router.get("/user-foods")
+async def list_user_foods(user_id: int) -> dict:
+    if await User.get_or_none(id=user_id) is None:
+        raise HTTPException(404, "用户不存在")
+    rows = await UserFood.filter(user_id=user_id).order_by("-updated_at")
+    return {
+        "foods": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "form": r.form,
+                "kcal": r.kcal,  # 每100克
+                "protein": r.protein,
+                "fat": r.fat,
+                "cho": r.cho,
+                "fiber": r.fiber,
+                "updated_at": r.updated_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/user-foods/{food_id}")
+async def delete_user_food(food_id: int) -> dict:
+    """删自定义食物:只影响以后的查表,已入库的记录数字不动。"""
+    rec = await UserFood.get_or_none(id=food_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    await rec.delete()
+    return {"deleted": food_id}
+
+
+# ── 设置页(2026-07-09):AI 记忆查删。记忆全量注入解析 prompt,
+# 错的记忆会持续误导,删除即止;纠正类由系统模板自动生成 ─────────────────────
+
+
+@router.get("/memories")
+async def list_memories(user_id: int) -> dict:
+    if await User.get_or_none(id=user_id) is None:
+        raise HTTPException(404, "用户不存在")
+    rows = await AiMemory.filter(user_id=user_id).order_by("-updated_at")
+    return {
+        "memories": [
+            {
+                "id": r.id,
+                "kind": r.kind,  # alias | habit | correction
+                "content": r.content,
+                "updated_at": r.updated_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/memories/{memory_id}")
+async def delete_memory(memory_id: int) -> dict:
+    rec = await AiMemory.get_or_none(id=memory_id)
+    if rec is None:
+        raise HTTPException(404, "记录不存在")
+    await rec.delete()
+    return {"deleted": memory_id}
