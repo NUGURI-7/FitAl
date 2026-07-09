@@ -99,7 +99,9 @@ struct HomeView: View {
     }
 
     private var dateISO: String {
-        shownDate.formatted(.iso8601.year().month().day())
+        // 必须显式带本地时区:ISO8601 格式化默认按 UTC 取日子,
+        // 凌晨 0-8 点会把"今天"算成昨天,整条时间轴错位一天
+        shownDate.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
     }
 
     private var dateTitle: String {
