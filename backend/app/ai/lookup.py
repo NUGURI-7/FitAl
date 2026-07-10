@@ -128,7 +128,17 @@ _FORM_CLUSTERS = _load_clusters()
 
 def find_food(name: str) -> FoodItem | None:
     key = _norm(name)
-    return _FOOD_BY_NAME.get(key) or _FOOD_BY_NAME.get(_FOOD_ALIAS.get(key, ""))
+    hit = _FOOD_BY_NAME.get(key) or _FOOD_BY_NAME.get(_FOOD_ALIAS.get(key, ""))
+    if hit:
+        return hit
+    # 模型爱给名字乱加"(代表值)"后缀(表里未必有该条目,错例④补充线索):
+    # 精确未命中时剥掉该后缀再试一次——确定性归一化,免去一轮估算打回
+    stripped = key.removesuffix("(代表值)")
+    if stripped != key:
+        return _FOOD_BY_NAME.get(stripped) or _FOOD_BY_NAME.get(
+            _FOOD_ALIAS.get(stripped, "")
+        )
+    return None
 
 
 def find_exercise(name: str) -> MetItem | None:

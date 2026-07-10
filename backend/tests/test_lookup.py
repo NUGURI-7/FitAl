@@ -103,3 +103,13 @@ def test_歧义簇_成员自身形态标签可查():
     assert lookup.cluster_member_form("稻米(代表值)") == "生"
     assert lookup.cluster_member_form("木耳(水发)") == "水发"
     assert lookup.cluster_member_form("鸡胸脯肉") is None
+
+
+def test_查表_剥代表值后缀再试一次():
+    # 模型爱输出"奶油(代表值)"这类表里没有的名字;剥后缀应命中"奶油"本尊
+    assert lookup.find_food("奶油(代表值)") is not None
+    assert lookup.find_food("奶油(代表值)").name == lookup.find_food("奶油").name
+    # 全角括号同样处理(归一化在前)
+    assert lookup.find_food("奶油（代表值）") is not None
+    # 剥完仍不在表里的照旧未命中(面包源头无数据)
+    assert lookup.find_food("面包(代表值)") is None
