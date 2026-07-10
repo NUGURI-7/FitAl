@@ -17,6 +17,7 @@ from app.models import (
     AiMemory,
     ExerciseRecord,
     FoodRecord,
+    Input,
     Meal,
     Session,
     User,
@@ -85,21 +86,35 @@ async def chat(body: ChatIn) -> StreamingResponse:
     current_session = await aggregate.open_session(user, now)
     memory_rows = await AiMemory.filter(user=user).order_by("updated_at")
 
-    parsed = await parser.parse_text(
-        body.text,
-        now=now,
-        user_food_keys=frozenset(user_foods),
-        open_session=await aggregate.session_summary(current_session),
-        memories=";".join(r.content for r in memory_rows) or None,
-    )
-    resolved = parser.build_records(
-        parsed,
-        profile=profile,
-        now=now,
-        last_exercise_at=last_exercise.created_at if last_exercise else None,
-        user_foods=user_foods,
-    )
-    cards = await persist_records(user, body.text, resolved, current_session)
+    # 先落底再解析:整句炸了原话也留得住(输入表,一句话一行)
+    input_row = await Input.create(user=user, text=body.text)
+    rounds: dict = {}
+    try:
+        parsed = await parser.parse_text(
+            body.text,
+            now=now,
+            user_food_keys=frozenset(user_foods),
+            open_session=await aggregate.session_summary(current_session),
+            memories=";".join(r.content for r in memory_rows) or None,
+            rounds_sink=rounds,
+        )
+        resolved = parser.build_records(
+            parsed,
+            profile=profile,
+            now=now,
+            last_exercise_at=last_exercise.created_at if last_exercise else None,
+            user_foods=user_foods,
+        )
+    except Exception as e:
+        rounds["error"] = f"{type(e).__name__}: {e}"
+        input_row.status = "failed"
+        input_row.ai_rounds = rounds
+        await input_row.save()
+        raise
+    cards = await persist_records(user, body.text, resolved, current_session, input_row)
+    input_row.status = "ok"
+    input_row.ai_rounds = rounds or None
+    await input_row.save()
     reply = compose_reply(resolved)
 
     async def stream():
@@ -140,12 +155,19 @@ async def persist_records(
     raw_text: str,
     resolved: list[parser.ResolvedRecord],
     current_session=None,
+    input_row: Input | None = None,
 ) -> list[dict]:
-    """落 raw 层并逐条执行 AI 的归组判断,返回给前端的记录卡片。"""
+    """落 raw 层并逐条执行 AI 的归组判断,返回给前端的记录卡片。
+
+    input_row:本句话的输入行,三类记录(食物/运动/体重)挂 input_id 指回;
+    自定义食物/记忆是"定义"不是记录,不挂。
+    """
     cards: list[dict] = []
     for r in resolved:
         if isinstance(r, parser.ResolvedWeight):
-            rec = await WeightRecord.create(user=user, weight_kg=r.weight_kg)
+            rec = await WeightRecord.create(
+                user=user, weight_kg=r.weight_kg, input=input_row
+            )
             cards.append(
                 {
                     "type": "weight",
@@ -199,6 +221,7 @@ async def persist_records(
                 duration_min=r.duration_min,
                 load_kg=r.load_kg,
                 reps=r.reps,
+                input=input_row,
             )
             current_session = await aggregate.assign_exercise(
                 rec, current_session, r.starts_new_group, r.group_name
@@ -233,6 +256,7 @@ async def persist_records(
                 fat=r.fat,
                 cho=r.cho,
                 fiber=r.fiber,
+                input=input_row,
             )
             meal = await aggregate.assign_food(rec, r.meal_slot)
             cards.append(

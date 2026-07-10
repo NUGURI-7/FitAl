@@ -556,6 +556,7 @@ async def parse_text(
     user_food_keys: frozenset[str] = frozenset(),
     open_session: str | None = None,
     memories: str | None = None,
+    rounds_sink: dict | None = None,
 ) -> ParseOutput:
     """LLM 洗数据入口:一次解析 + 封闭候选裁决(微循环第二轮,按需)。
 
@@ -566,6 +567,7 @@ async def parse_text(
     (跳过重映射/免 est 兜底),绝不注入提示词(决策9:禁止 prompt hack)。
     open_session:当天最近一场训练的摘要,AI 据此判断场次归组(无阈值常量)。
     memories:该用户全部记忆拼成的一段文本(量小,全量注入,不做检索)。
+    rounds_sink:调用方给的存档口袋,各轮 AI 吐出原样放入(输入表 ai_rounds 用)。
     """
     # 存储用 UTC;给 LLM 看的时间转本地时区,否则"中午/晚上"这类语境会错 8 小时
     local_now = now.astimezone(ZoneInfo(settings.TIMEZONE)) if now.tzinfo else now
@@ -576,6 +578,8 @@ async def parse_text(
         prefix += f"[用户记忆:{memories}]"
     result = await parse_agent().run(f"{prefix}\n用户说:{text}", deps=user_food_keys)
     output = result.output
+    if rounds_sink is not None:
+        rounds_sink["parse"] = output.model_dump(mode="json")
 
     pending: dict[str, list[str]] = {}
     for item in _iter_foods(output):
@@ -594,6 +598,8 @@ async def parse_text(
             f"{name} 的候选:{'、'.join(cands)}" for name, cands in pending.items()
         )
         mapping = (await remap_agent().run(question)).output.mapping
+        if rounds_sink is not None:
+            rounds_sink["remap"] = {"pending": pending, "mapping": mapping}
         for item in _iter_foods(output):
             if item.name in mapping:
                 target = mapping[item.name]
