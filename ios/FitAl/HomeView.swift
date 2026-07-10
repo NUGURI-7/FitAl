@@ -21,6 +21,7 @@ struct HomeView: View {
     @State private var inputText = ""
     @State private var sending = false
     @State private var toast: String?
+    @State private var toastIsError = false
     @State private var sendCount = 0
     @State private var expandedDishes: Set<String> = []
     @State private var armedDishID: String?
@@ -173,6 +174,11 @@ struct HomeView: View {
                                 .entrance(appeared, index: 2)
                                 .scrollBreathing()
                         }
+                        Text("点明细可改可删 · 菜行可展开成分")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary.opacity(0.7))
+                            .padding(.top, 2)
+                            .entrance(appeared, index: 3)
                     }
                 }
             }
@@ -354,7 +360,7 @@ struct HomeView: View {
         ) {
             ForEach(day.meals) { meal in
                 VStack(spacing: 0) {
-                    groupHeader(name: meal.name ?? "一顿饭", kcal: meal.kcalTotal)
+                    groupHeader(name: meal.name ?? "一顿饭", count: mealRecordCount(meal), kcal: meal.kcalTotal)
                     ForEach(meal.items) { entry in
                         switch entry {
                         case .food(let f):
@@ -499,7 +505,7 @@ struct HomeView: View {
                 deleteCount += 1
                 showToast("已删除整道「\(d.dishName)」")
             } catch {
-                showToast("删除失败:\(error.localizedDescription)")
+                showToast("删除失败:\(error.localizedDescription)", error: true)
             }
             await load()
             dishDeleting = false
@@ -513,6 +519,16 @@ struct HomeView: View {
         return parts.isEmpty ? "—" : parts.joined(separator: " · ")
     }
 
+    /// "条"数按 raw 记录计:菜按其成分数计,不把菜自身算一条(与 Web 同口径)
+    private func mealRecordCount(_ meal: APIGroup<MealEntry>) -> Int {
+        meal.items.reduce(0) { n, e in
+            switch e {
+            case .food: n + 1
+            case .dish(let d): n + d.items.count
+            }
+        }
+    }
+
     // MARK: - 运动卡
 
     private func exerciseCard(_ day: APIDay) -> some View {
@@ -522,7 +538,7 @@ struct HomeView: View {
         ) {
             ForEach(day.sessions) { session in
                 VStack(spacing: 0) {
-                    groupHeader(name: session.name ?? "一场训练", kcal: session.kcalTotal)
+                    groupHeader(name: session.name ?? "一场训练", count: session.items.count, kcal: session.kcalTotal)
                     ForEach(session.items) { item in
                         itemRow(
                             name: item.exerciseName,
@@ -561,11 +577,14 @@ struct HomeView: View {
 
     // MARK: - 通用卡片与行
 
-    private func groupHeader(name: String, kcal: Double) -> some View {
-        HStack {
+    private func groupHeader(name: String, count: Int, kcal: Double) -> some View {
+        HStack(alignment: .firstTextBaseline) {
             Text(name)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
+            Text("\(count) 条")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textSecondary.opacity(0.7))
             Spacer()
             Text("\(Int(kcal.rounded())) 千卡")
                 .font(.system(size: 12, weight: .medium))
@@ -645,10 +664,10 @@ struct HomeView: View {
             if let toast {
                 Text(toast)
                     .font(.system(size: 13))
-                    .foregroundStyle(Theme.textPrimary)
+                    .foregroundStyle(toastIsError ? .white : Theme.textPrimary)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .glassEffect()
+                    .glassEffect(toastIsError ? .regular.tint(Theme.burn) : .regular)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
@@ -789,15 +808,16 @@ struct HomeView: View {
                 if dayOffset != 0 { dayOffset = 0 } // 记录永远落在"现在",发送后跳回今天
                 await load()
             } catch {
-                showToast("发送失败:\(error.localizedDescription)")
+                showToast("发送失败:\(error.localizedDescription)", error: true)
                 inputText = text // 失败还回输入,方便重发
             }
             sending = false
         }
     }
 
-    private func showToast(_ msg: String) {
+    private func showToast(_ msg: String, error: Bool = false) {
         toast = msg
+        toastIsError = error
         Task {
             try? await Task.sleep(for: .seconds(4))
             if toast == msg { toast = nil }
