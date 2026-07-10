@@ -24,6 +24,7 @@ from pydantic_ai.settings import ModelSettings
 
 from app.ai import lookup, parser
 from app.ai.schema import (
+    ExerciseParseOutput,
     ParsedDish,
     ParsedExercise,
     ParsedFood,
@@ -199,20 +200,26 @@ def _eat_instructions() -> str:
 
 
 def _exercise_instructions() -> str:
-    return f"""你是运动记录解析器,输入是用户话里"运动/训练相关"的片段,拆成零或多条记录。
-你只输出结构,绝不做任何算术、绝不输出建议。只输出 exercise 条目。
+    return f"""你是运动记录解析器,输入是用户话里"运动/训练相关"的片段,拆成零或多条记录,
+并给出整体计算策略 strategy。你只输出结构,绝不做任何算术、绝不输出建议。
 
 规则:
 1. 用户自己报了消耗热量 → 原样填 reported_kcal,不要改动。
 2. 动作名先对下方 MET 表(含别名);表里没有的力量动作(有负重/组次特征)填
    fallback_tier:器械或单关节孤立动作=moderate,大重量自由复合=vigorous;
    表外有氧才填 est_met。
-3. 报次数填 reps,报时长填 duration_min;绝不自行换算。
-4. 场次归组:消息可能附带[当前训练场次](当天最近一场的时间与内容)。
+3. 每组次数填 reps,组数填 sets("5组每组5个"→sets=5, reps=5;"3组弯举"→sets=3),
+   报时长填 duration_min;绝不自行换算,绝不把组数当次数,绝不把组数乘次数。
+4. strategy 判断场景:正在练、报单组 → mode=realtime;
+   练完一次性补报(报了多组、或带整场时长)→ mode=backfill,此时必须给
+   total_duration_min——用户明说了整场时长照抄并填 duration_basis=stated,
+   没明说则按内容常识估计一个合理总时长并填 duration_basis=estimated。
+   时长怎么分摊到每组由代码完成,你绝不算。
+5. 场次归组:消息可能附带[当前训练场次](当天最近一场的时间与内容)。
    结合当前时间和内容常识判断:延续它 → starts_new_group=false;新一场 → true。
    每条 exercise 填 group_name——所在场次的展示名(2~8字,按内容与时段起,
    如"晚间胸部训练");延续已有场次时结合已含内容给更贴切的名字。
-5. 消息可能附带[用户记忆],解析时优先按记忆理解用户的话。
+6. 消息可能附带[用户记忆],解析时优先按记忆理解用户的话。
 
 MET 表({len(lookup.met_items())}条):
 {parser._met_table_block()}"""
@@ -265,9 +272,97 @@ def eat_agent() -> Agent:
     return _specialist(_eat_instructions())
 
 
+def exercise_problems(out: ExerciseParseOutput) -> list[str]:
+    """运动专科的硬校验(策略层,错例①方案):合法性归代码。"""
+    problems = []
+    s = out.strategy
+    if s.mode == "backfill" and not s.total_duration_min:
+        problems.append(
+            "补报整场(backfill)必须给 total_duration_min:明说照抄(stated),"
+            "没明说按常识估计(estimated)"
+        )
+    if s.mode == "realtime" and any((i.sets or 1) > 1 for i in out.items):
+        problems.append("出现多组(sets>1)应判为补报整场:mode=backfill 并给总时长")
+    for item in out.items:
+        if (
+            lookup.find_exercise(item.name) is None
+            and item.fallback_tier is None
+            and item.est_met is None
+            and item.reported_kcal is None
+        ):
+            problems.append(
+                f"{item.name}: 不在MET表,需给 fallback_tier(力量)或 est_met(有氧)"
+            )
+        if (
+            s.mode == "realtime"
+            and item.reported_kcal is None
+            and item.duration_min is None
+            and item.reps is None
+        ):
+            # 补报模式不作此要求:缺次数由分摊权重兜底,时长来自整场分摊
+            problems.append(f"{item.name}: 缺时长或次数")
+    return problems
+
+
 @lru_cache(maxsize=1)
 def exercise_agent() -> Agent:
-    return _specialist(_exercise_instructions())
+    agent = Agent(
+        parser._model(),
+        output_type=ExerciseParseOutput,
+        deps_type=frozenset,
+        instructions=_exercise_instructions(),
+        retries=parser.MAX_PARSE_RETRIES,
+        model_settings=parser._model_settings(),
+    )
+
+    @agent.output_validator
+    async def _validate(
+        ctx: RunContext[frozenset], output: ExerciseParseOutput
+    ) -> ExerciseParseOutput:
+        problems = exercise_problems(output)
+        if problems:
+            raise ModelRetry("以下条目不合格,请修正后重新输出:" + ";".join(problems))
+        return output
+
+    return agent
+
+
+def expand_backfill(
+    items: list[ParsedExercise], total_min: float
+) -> list[ParsedExercise]:
+    """补报整场:按组数展开为每组一条,整场时长按次数权重分摊(算术归代码)。
+
+    - 明说了自身时长的条目原样保留(每组各占该时长),不参与分摊,
+      其占用先从整场里扣除;
+    - 其余各组权重=每组次数;没报次数的组按已知次数均值计权(全没报则等权);
+    - 分摊时长合计严格等于剩余整场(末条吸收凑整误差);
+    - 展开后只有第一条保留场次归组判断,其余必然延续同场。
+    """
+    units: list[ParsedExercise] = []
+    for item in items:
+        for _ in range(item.sets or 1):
+            dup = item.model_copy(deep=True)
+            dup.sets = None
+            units.append(dup)
+
+    known = [u.reps for u in units if u.reps and u.duration_min is None]
+    default_w = sum(known) / len(known) if known else 1.0
+    stated_min = sum(u.duration_min for u in units if u.duration_min)
+    pool = max(total_min - stated_min, 0.0)
+
+    floating = [u for u in units if u.duration_min is None]
+    total_w = sum(float(u.reps) if u.reps else default_w for u in floating)
+    allocated = 0.0
+    for idx, u in enumerate(floating):
+        if idx < len(floating) - 1 and total_w > 0:
+            w = float(u.reps) if u.reps else default_w
+            u.duration_min = round(pool * w / total_w, 2)
+            allocated += u.duration_min
+        else:
+            u.duration_min = round(pool - allocated, 2)  # 合计严格=整场
+    for u in units[1:]:
+        u.starts_new_group = False
+    return units
 
 
 @lru_cache(maxsize=1)
@@ -283,22 +378,32 @@ async def _extract_track(
     user_food_keys: frozenset[str],
     open_session: str | None,
     memories: str | None,
-) -> ParseOutput:
-    agent = {"eat": eat_agent, "exercise": exercise_agent, "remember": remember_agent}[
-        track
-    ]()
+) -> tuple[ParseOutput, dict]:
+    """返回 (可合并的解析结果, 该轮 AI 原始吐出的存档)。"""
     local_now = now.astimezone(ZoneInfo(settings.TIMEZONE)) if now.tzinfo else now
     prefix = f"[当前时间 {local_now:%Y-%m-%d %H:%M}]"
     if track == "exercise" and open_session:
         prefix += f"[当前训练场次:{open_session}]"
     if memories and track != "remember":
         prefix += f"[用户记忆:{memories}]"
-    joined = "\n".join(texts)
-    result = await agent.run(f"{prefix}\n用户说:{joined}", deps=user_food_keys)
-    output = result.output
+    prompt = f"{prefix}\n用户说:" + "\n".join(texts)
+
+    if track == "exercise":
+        out: ExerciseParseOutput = (
+            await exercise_agent().run(prompt, deps=user_food_keys)
+        ).output
+        dump = out.model_dump(mode="json")  # 存档带策略,展开前的原貌
+        items = out.items
+        if out.strategy.mode == "backfill" and out.strategy.total_duration_min:
+            items = expand_backfill(items, out.strategy.total_duration_min)
+        return ParseOutput(items=items), dump
+
+    agent = {"eat": eat_agent, "remember": remember_agent}[track]()
+    output = (await agent.run(prompt, deps=user_food_keys)).output
+    dump = output.model_dump(mode="json")
     allowed = TRACK_TYPES[track]
     output.items = [i for i in output.items if isinstance(i, allowed)]  # 越界丢弃
-    return output
+    return output, dump
 
 
 # ── 编排:分诊 → 按类型并发 → 合并 → 第二轮裁决 ─────────────────────────
@@ -364,15 +469,16 @@ async def parse_via_triage(
             if rounds_sink is not None:
                 rounds_sink[track] = {"error": result.failed_tracks[track]}
             continue
+        output, dump = res
         if track == "eat":  # 分诊提的餐次槽:专科没填而段里明说了,单段时回填
             eat_segs = by_type["eat"]
             if len(eat_segs) == 1 and eat_segs[0].meal_slot:
-                for item in res.items:
+                for item in output.items:
                     if item.meal_slot is None:
                         item.meal_slot = eat_segs[0].meal_slot
-        result.output.items.extend(res.items)
+        result.output.items.extend(output.items)
         if rounds_sink is not None:
-            rounds_sink[track] = res.model_dump(mode="json")
+            rounds_sink[track] = dump
 
     await parser.adjudicate_names(
         result.output, text, user_food_keys, rounds_sink=rounds_sink

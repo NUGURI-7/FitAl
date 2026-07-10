@@ -6,7 +6,14 @@ from datetime import UTC, datetime
 import pytest
 
 from app.ai import pipeline
-from app.ai.schema import ParsedFood, ParsedWeight, ParseOutput
+from app.ai.schema import (
+    ExerciseParseOutput,
+    ExerciseStrategy,
+    ParsedExercise,
+    ParsedFood,
+    ParsedWeight,
+    ParseOutput,
+)
 
 NOW = datetime(2026, 7, 10, 12, 0, tzinfo=UTC)
 
@@ -93,7 +100,7 @@ async def test_管线_单科炸只降级该段其他照常(monkeypatch):
             raise RuntimeError("专科重试耗尽")
         return ParseOutput(
             items=[ParsedFood(spoken_name="黄瓜", name="黄瓜(鲜)", grams=100)]
-        )
+        ), {"stub": True}
 
     monkeypatch.setattr(pipeline, "_extract_track", tracks)
     result = await pipeline.parse_via_triage("吃了根黄瓜100克,卧推60公斤10个", now=NOW)
@@ -112,7 +119,7 @@ async def test_管线_餐次槽单段回填且各轮存档齐全(monkeypatch):
     async def tracks(track, texts, **kwargs):
         return ParseOutput(
             items=[ParsedFood(spoken_name="鸡蛋", name="鸡蛋(代表值)", grams=100)]
-        )
+        ), {"stub": True}
 
     monkeypatch.setattr(pipeline, "_extract_track", tracks)
     rounds: dict = {}
@@ -121,6 +128,7 @@ async def test_管线_餐次槽单段回填且各轮存档齐全(monkeypatch):
     )
     assert result.output.items[0].meal_slot == "早餐"  # 专科没填,分诊的槽回填
     assert set(rounds) == {"triage", "eat"}  # 每轮吐出都有档
+    assert rounds["eat"] == {"stub": True}
 
 
 async def test_管线_状态事件按阶段依次发出(monkeypatch):
@@ -128,7 +136,7 @@ async def test_管线_状态事件按阶段依次发出(monkeypatch):
     monkeypatch.setattr(pipeline, "_triage_call", fake)
 
     async def tracks(track, texts, **kwargs):
-        return ParseOutput(items=[])
+        return ParseOutput(items=[]), {}
 
     monkeypatch.setattr(pipeline, "_extract_track", tracks)
     events: list[dict] = []
@@ -142,3 +150,57 @@ async def test_管线_状态事件按阶段依次发出(monkeypatch):
         {"stage": "extract", "tracks": ["eat"]},
         {"stage": "track_done", "track": "eat"},
     ]
+
+
+def test_展开_按次数权重分摊且合计严格等于整场():
+    items = [
+        ParsedExercise(name="卧推", sets=5, reps=5, load_kg=40, starts_new_group=True),
+        ParsedExercise(name="悬垂举腿", sets=3, reps=12),
+    ]
+    out = pipeline.expand_backfill(items, 90.0)
+    assert len(out) == 8  # 5组+3组,每组一条
+    assert all(u.sets is None for u in out)
+    assert round(sum(u.duration_min for u in out), 2) == 90.0  # 合计严格=整场
+    assert out[0].duration_min == round(90 * 5 / (5 * 5 + 3 * 12), 2)  # 按次数计权
+    assert [u.starts_new_group for u in out] == [True] + [False] * 7  # 同一场
+
+
+def test_展开_没报次数的组按已知均值计权():
+    items = [
+        ParsedExercise(name="卧推", sets=2),  # 没报次数
+        ParsedExercise(name="悬垂举腿", sets=1, reps=10),
+    ]
+    out = pipeline.expand_backfill(items, 30.0)
+    assert [u.duration_min for u in out] == [10.0, 10.0, 10.0]  # 均值计权=等分
+
+
+def test_展开_明说时长的条目不参与分摊():
+    items = [
+        ParsedExercise(name="跑步", duration_min=30.0),
+        ParsedExercise(name="卧推", sets=2, reps=5),
+    ]
+    out = pipeline.expand_backfill(items, 90.0)
+    assert out[0].duration_min == 30.0  # 原样保留
+    assert [u.duration_min for u in out[1:]] == [30.0, 30.0]  # 剩余60等分
+
+
+def test_运动校验_策略合法性归代码():
+    缺时长 = ExerciseParseOutput(
+        items=[ParsedExercise(name="卧推", reps=5)],
+        strategy=ExerciseStrategy(mode="backfill"),
+    )
+    assert any("total_duration_min" in p for p in pipeline.exercise_problems(缺时长))
+
+    实时多组 = ExerciseParseOutput(
+        items=[ParsedExercise(name="卧推", sets=5, reps=5)],
+        strategy=ExerciseStrategy(mode="realtime"),
+    )
+    assert any("backfill" in p for p in pipeline.exercise_problems(实时多组))
+
+    补报缺次数是合法的 = ExerciseParseOutput(
+        items=[ParsedExercise(name="卧推", sets=3)],
+        strategy=ExerciseStrategy(
+            mode="backfill", total_duration_min=60, duration_basis="stated"
+        ),
+    )
+    assert pipeline.exercise_problems(补报缺次数是合法的) == []

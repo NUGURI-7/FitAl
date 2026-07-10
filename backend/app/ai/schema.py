@@ -21,7 +21,11 @@ class ParsedExercise(BaseModel):
         description="动作名:优先映射到 MET 表标准名;表里没有则保留用户原话"
     )
     duration_min: float | None = Field(None, description="用户报的时长(分钟),没报不填")
-    reps: int | None = Field(None, description="次数,没报不填")
+    reps: int | None = Field(None, description="每组次数,没报不填")
+    sets: int | None = Field(
+        None,
+        description="组数:'5组'填 sets=5;没明说不填。绝不把组数当次数、绝不相乘",
+    )
     load_kg: float | None = Field(None, description="负重公斤数,没报不填")
     reported_kcal: float | None = Field(
         None, description="用户自己报的消耗热量,原样照抄"
@@ -162,6 +166,28 @@ class NameRemap(BaseModel):
     """微循环第二轮:未命中的名字 → 从候选里挑标准名,挑不出给 null。"""
 
     mapping: dict[str, str | None]
+
+
+class ExerciseStrategy(BaseModel):
+    """运动计算策略(错例①方案):AI 判断场景与总时长,乘法归代码。"""
+
+    mode: Literal["realtime", "backfill"] = Field(
+        description="realtime=实时逐组报(正在练);backfill=补报整场(练完一次性报多组或带整场时长)"
+    )
+    total_duration_min: float | None = Field(
+        None,
+        description="backfill 必填:整场总时长(分钟)。用户明说照抄;没明说按内容常识估计",
+    )
+    duration_basis: Literal["stated", "estimated"] | None = Field(
+        None, description="总时长依据:stated=用户明说;estimated=AI 估计"
+    )
+
+
+class ExerciseParseOutput(BaseModel):
+    """运动专科输出:逐条记录 + 整体计算策略。"""
+
+    items: list[ParsedExercise]
+    strategy: ExerciseStrategy
 
 
 class TriageSegment(BaseModel):
