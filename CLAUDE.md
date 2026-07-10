@@ -92,7 +92,11 @@ ios/                   # SwiftUI 前端(Web 之后,独立于 backend)
 POST /chat                             # 唯一对话入口(SSE 流式):记录与查看都走它
   请求: { "user_id": 1, "text": "卧推60公斤10个" }
   intent=record(v1 仅此):洗数据→raw→聚合→new
-    事件流: event:records(入库 raw 记录卡片,带 session_id/meal_id)
+    事件流: event:status(处理进度,2026-07-10 定,纯增量、老客户端忽略不坏;
+              stage 枚举:triage(分诊中)/ extract+tracks数组(专科并发开始)/
+              track_done+track(某路完成)/ saving(算数入库);
+              失败降级不进状态事件,照旧走回执文字)
+            event:records(入库 raw 记录卡片,带 session_id/meal_id)
             event:reply(模板拼接的一句话回执,零 LLM 成本)
   intent=query(后续,读代理):event:answer 流式回答;周报=查询的一种
   intent=clarify(后续):event:clarify 澄清反问
