@@ -218,12 +218,12 @@ def _form_resolved_name(name: str, form: str | None) -> str:
 def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> ResolvedFood:
     name = _form_resolved_name(p.name, p.form)
     food_item = lookup.find_food(name)
-    nutrition = (
-        lookup.food_nutrition(food_item, p.grams) if food_item and p.grams else None
-    )
+    # 数量格:报了数量时 grams 是单份克数,总克数=数量×单份(乘法归代码)
+    grams = None if p.grams is None else p.grams * (p.count or 1)
+    nutrition = lookup.food_nutrition(food_item, grams) if food_item and grams else None
 
     if p.is_condiment:  # 补油/补调味显式原则:独立成条,永远标估算,可删可改
-        grams = p.grams or OIL_DEFAULT_GRAMS
+        grams = grams or OIL_DEFAULT_GRAMS
         kcal = (
             round(food_item.kcal * grams / 100, 1)
             if food_item
@@ -243,20 +243,20 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
 
     if p.reported_kcal is not None:  # 优先级1:用户自报
         return _food_record(
-            name, "user_reported", p.reported_kcal, p.grams, nutrition, p.meal_slot
+            name, "user_reported", p.reported_kcal, grams, nutrition, p.meal_slot
         )
 
     # 优先级2:自定义食物——原话叫法精确命中(键归一化与官方表同规则),
     # 每100克口径,与官方表同一算法
     uf = user_foods.get(lookup.norm_key(p.spoken_name))
-    if uf and p.grams:
-        factor = p.grams / 100
+    if uf and grams:
+        factor = grams / 100
         scale = lambda v: None if v is None else round(v * factor, 1)  # noqa: E731
         return ResolvedFood(
             food_name=uf.name,
             source="user_food",
             kcal=round(uf.kcal * factor, 1),
-            grams=p.grams,
+            grams=grams,
             meal_slot=p.meal_slot,
             protein=scale(uf.protein),
             fat=scale(uf.fat),
@@ -264,20 +264,18 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             fiber=scale(uf.fiber),
         )
 
-    if food_item and p.grams:  # 优先级3:静态表
+    if food_item and grams:  # 优先级3:静态表
         return _food_record(
             food_item.name,
             "food_table",
             nutrition["kcal"],
-            p.grams,
+            grams,
             nutrition,
             p.meal_slot,
         )
 
     if p.est_kcal is not None:  # 优先级4:估算兜底
-        return _food_record(
-            name, "llm_estimated", p.est_kcal, p.grams, None, p.meal_slot
-        )
+        return _food_record(name, "llm_estimated", p.est_kcal, grams, None, p.meal_slot)
 
     raise ValueError(f"{name}: 查表未命中且无估算值")
 

@@ -55,7 +55,16 @@ class ParsedFood(BaseModel):
     name: str = Field(
         description="标准名映射:往成分表标准名靠(同类多条目优先带'(代表值)'的);映射不了保留原话"
     )
-    grams: float | None = Field(None, description="克数;个/碗/勺等按常识换算成克")
+    grams: float | None = Field(
+        None,
+        description="克数:报了数量(count)时填单份克数;没报数量时填该条总克数;"
+        "个/碗/勺等按常识换算成克",
+    )
+    count: int | None = Field(
+        None,
+        description="数量:'两个鸡蛋'填2、'三根香蕉'填3;没报数量不填。"
+        "总克数=count×grams 由代码相乘,你绝不相乘",
+    )
     form: FoodForm | None = Field(
         None,
         description="形态:仅当用户明说了生/熟/干/水发/即食(或同义词)才填;没明说必须不填,绝不猜",

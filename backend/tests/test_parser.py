@@ -297,3 +297,12 @@ def test_降级_整菜估算漏填时代码从成分求和():
     expect = round(lookup.find_food("奶油").kcal * 40 / 100 + 120.0, 1)
     assert food.est_kcal == expect
     assert food.grams == 140.0
+
+
+def test_数量格_总克数由代码相乘():
+    from app.ai.schema import ParsedFood
+
+    p = ParsedFood(spoken_name="鸡蛋", name="鸡蛋(代表值)", grams=50, count=2)
+    food = parser._resolve_food(p, {})
+    assert food.grams == 100.0  # 2个 × 单份50g,乘法归代码
+    assert food.kcal == 139.0  # 按总克数查表
