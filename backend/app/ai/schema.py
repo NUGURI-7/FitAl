@@ -162,6 +162,25 @@ class NameRemap(BaseModel):
     mapping: dict[str, str | None]
 
 
+class TriageSegment(BaseModel):
+    """分诊切出的一段:类型+原文片段(照抄原句子串,代码机器校验)。"""
+
+    type: Literal["eat", "exercise", "weight", "remember"]
+    text: str = Field(description="对应原话的片段,一字不改照抄")
+    meal_slot: MealSlot | None = Field(
+        None, description="仅 eat 段且用户明说哪一顿才填;没明说必须 null"
+    )
+    weight_kg: float | None = Field(
+        None, description="仅 weight 段:公斤数,分诊直接出结果不发子任务"
+    )
+
+
+class TriageOutput(BaseModel):
+    """分诊输出(提示词JSON通道:开思考的端点不支持强制结构化输出)。"""
+
+    segments: list[TriageSegment]
+
+
 class MemoryItem(BaseModel):
     kind: Literal["alias", "habit", "correction"]
     content: str

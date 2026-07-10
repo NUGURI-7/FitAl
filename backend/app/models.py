@@ -23,7 +23,9 @@ class WeightRecord(Model):
     weight_kg = fields.FloatField()
     # 来自哪次输入;老数据为空。删输入行不动 raw(raw 是唯一事实源)
     input = fields.ForeignKeyField(
-        "models.Input", related_name="weight_records", null=True,
+        "models.Input",
+        related_name="weight_records",
+        null=True,
         on_delete=fields.SET_NULL,
     )
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -109,7 +111,9 @@ class ExerciseRecord(Model):
         "models.Session", related_name="items", null=True, on_delete=fields.SET_NULL
     )
     input = fields.ForeignKeyField(
-        "models.Input", related_name="exercise_records", null=True,
+        "models.Input",
+        related_name="exercise_records",
+        null=True,
         on_delete=fields.SET_NULL,
     )
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -141,7 +145,9 @@ class FoodRecord(Model):
         "models.Meal", related_name="items", null=True, on_delete=fields.SET_NULL
     )
     input = fields.ForeignKeyField(
-        "models.Input", related_name="food_records", null=True,
+        "models.Input",
+        related_name="food_records",
+        null=True,
         on_delete=fields.SET_NULL,
     )
     created_at = fields.DatetimeField(auto_now_add=True)

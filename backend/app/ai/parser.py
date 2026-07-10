@@ -580,7 +580,21 @@ async def parse_text(
     output = result.output
     if rounds_sink is not None:
         rounds_sink["parse"] = output.model_dump(mode="json")
+    await adjudicate_names(output, text, user_food_keys, rounds_sink=rounds_sink)
+    return output
 
+
+async def adjudicate_names(
+    output: ParseOutput,
+    text: str,
+    user_food_keys: frozenset[str] = frozenset(),
+    *,
+    rounds_sink: dict | None = None,
+) -> None:
+    """微循环第二轮(按需):未命中重映射 + 形态裁决,合并一次调用,原地改名。
+
+    新旧管线共用:旧入口解析完调用;分诊管线合并各专科结果后调用。
+    """
     pending: dict[str, list[str]] = {}
     for item in _iter_foods(output):
         if getattr(item, "reported_kcal", None) is not None:
@@ -593,16 +607,16 @@ async def parse_text(
                 pending[item.name] = candidates
         elif item.form is None and (cluster := lookup.form_cluster(item.name)):
             pending[item.name] = [m.name for m in cluster]  # 形态裁决:不猜,交裁决
-    if pending:
-        question = f"用户原话:{text}\n" + "\n".join(
-            f"{name} 的候选:{'、'.join(cands)}" for name, cands in pending.items()
-        )
-        mapping = (await remap_agent().run(question)).output.mapping
-        if rounds_sink is not None:
-            rounds_sink["remap"] = {"pending": pending, "mapping": mapping}
-        for item in _iter_foods(output):
-            if item.name in mapping:
-                target = mapping[item.name]
-                if target and lookup.find_food(target):
-                    item.name = target
-    return output
+    if not pending:
+        return
+    question = f"用户原话:{text}\n" + "\n".join(
+        f"{name} 的候选:{'、'.join(cands)}" for name, cands in pending.items()
+    )
+    mapping = (await remap_agent().run(question)).output.mapping
+    if rounds_sink is not None:
+        rounds_sink["remap"] = {"pending": pending, "mapping": mapping}
+    for item in _iter_foods(output):
+        if item.name in mapping:
+            target = mapping[item.name]
+            if target and lookup.find_food(target):
+                item.name = target
