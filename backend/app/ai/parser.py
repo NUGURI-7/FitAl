@@ -379,12 +379,26 @@ def conservation_violations(output: ParseOutput) -> list[str]:
 
 
 def degrade_dish(dish: ParsedDish) -> ParsedFood:
-    """守恒重试不过 → 整菜降级为估算一条(走 est 路径,必标 llm_estimated)。"""
+    """守恒重试不过 → 整菜降级为估算一条(走 est 路径,必标 llm_estimated)。
+
+    整菜估算值模型没给时,代码从成分自己求和(表内按每100克算,表外用成分估算;
+    算术归代码)——该字段因此无需硬校验,漏填不烧重试。
+    """
+    est = dish.est_total_kcal
+    if est is None:
+        parts = []
+        for ing in dish.ingredients:
+            item = lookup.find_food(_form_resolved_name(ing.name, ing.form))
+            if item is not None:
+                parts.append(item.kcal * ing.grams / 100)
+            elif ing.est_kcal is not None:
+                parts.append(ing.est_kcal)
+        est = round(sum(parts), 1) if parts else None
     return ParsedFood(
         spoken_name=dish.dish_name,
         name=dish.dish_name,
         grams=dish.total_grams if dish.total_grams > 0 else None,
-        est_kcal=dish.est_total_kcal,
+        est_kcal=est,
         meal_slot=dish.meal_slot,
     )
 

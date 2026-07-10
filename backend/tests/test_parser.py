@@ -275,3 +275,25 @@ def test_候选搜索_代表值后缀不淹没主名召回():
     cands = lookup.candidate_foods("辣椒(代表值)")
     assert any(c.startswith("辣椒(") for c in cands)
     assert not any("代表值" in c for c in cands)
+
+
+def test_降级_整菜估算漏填时代码从成分求和():
+    from app.ai.schema import ParsedDish, ParsedIngredient
+
+    dish = ParsedDish(
+        dish_name="测试菜",
+        total_grams=140.0,
+        ingredients=[
+            ParsedIngredient(
+                spoken_name="奶油", name="奶油", grams=40.0
+            ),  # 表内:每100克879
+            ParsedIngredient(
+                spoken_name="神秘酱", name="神秘酱", grams=100.0, est_kcal=120.0
+            ),
+        ],
+        est_total_kcal=None,  # 模型漏填,schema 已宽容
+    )
+    food = parser.degrade_dish(dish)
+    expect = round(lookup.find_food("奶油").kcal * 40 / 100 + 120.0, 1)
+    assert food.est_kcal == expect
+    assert food.grams == 140.0

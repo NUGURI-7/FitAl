@@ -99,8 +99,10 @@ class ParsedDish(BaseModel):
     ingredients: list[ParsedIngredient] = Field(
         description="成分清单;各成分克数之和必须等于总克重,成分间不得重叠计量"
     )
-    est_total_kcal: float = Field(
-        description="整道菜总热量的兜底估算(仅在无法按成分查表时使用,平时不用)"
+    est_total_kcal: float | None = Field(
+        None,
+        description="整道菜总热量的兜底估算(仅在无法按成分查表时使用,平时不用);"
+        "漏填由代码从成分求和补出,不作硬校验",
     )
     meal_slot: MealSlot | None = Field(
         None,
