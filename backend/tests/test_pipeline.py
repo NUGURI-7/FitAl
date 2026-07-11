@@ -204,3 +204,11 @@ def test_运动校验_策略合法性归代码():
         ),
     )
     assert pipeline.exercise_problems(补报缺次数是合法的) == []
+
+
+def test_展开_多组条目上的时长按整场口径清空重分摊():
+    # 真机抓到:模型把"共练20分钟"填在条目时长上,原样保留会每组各占20分钟
+    items = [ParsedExercise(name="卧推", sets=3, reps=8, duration_min=20.0)]
+    out = pipeline.expand_backfill(items, 20.0)
+    assert len(out) == 3
+    assert round(sum(u.duration_min for u in out), 2) == 20.0  # 不再翻三倍
