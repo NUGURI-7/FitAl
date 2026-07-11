@@ -123,7 +123,9 @@ async def main() -> None:
         "seconds_max": max(seconds),
     }
     OUT_PATH.write_text(
-        json.dumps({"summary": summary, "results": results}, ensure_ascii=False, indent=2)
+        json.dumps(
+            {"summary": summary, "results": results}, ensure_ascii=False, indent=2
+        )
         + "\n",
         encoding="utf-8",
     )
