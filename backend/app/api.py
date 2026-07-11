@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import UTC, date, datetime, timedelta
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from tortoise import Tortoise, timezone
 from tortoise.exceptions import IntegrityError
 
-from app.ai import aggregate, lookup, parser
+from app.ai import aggregate, lookup, parser, pipeline
 from app.ai.schema import ParsedMemory, ParsedUserFoodDef
 from app.config import settings
 from app.models import (
@@ -88,38 +89,70 @@ async def chat(body: ChatIn) -> StreamingResponse:
 
     # 先落底再解析:整句炸了原话也留得住(输入表,一句话一行)
     input_row = await Input.create(user=user, text=body.text)
-    rounds: dict = {}
-    try:
-        parsed = await parser.parse_text(
-            body.text,
-            now=now,
-            user_food_keys=frozenset(user_foods),
-            open_session=await aggregate.session_summary(current_session),
-            memories=";".join(r.content for r in memory_rows) or None,
-            rounds_sink=rounds,
-        )
-        resolved = parser.build_records(
-            parsed,
-            profile=profile,
-            now=now,
-            last_exercise_at=last_exercise.created_at if last_exercise else None,
-            user_foods=user_foods,
-        )
-    except Exception as e:
-        rounds["error"] = f"{type(e).__name__}: {e}"
-        input_row.status = "failed"
-        input_row.ai_rounds = rounds
-        await input_row.save()
-        raise
-    cards = await persist_records(user, body.text, resolved, current_session, input_row)
-    input_row.status = "ok"
-    input_row.ai_rounds = rounds or None
-    await input_row.save()
-    reply = compose_reply(resolved)
+    session_summary = await aggregate.session_summary(current_session)
+
+    # 解析在流内进行:状态事件边发生边推给前端(契约 event:status)
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def emit(data: dict) -> None:
+        await queue.put(("status", data))
+
+    async def process() -> None:
+        rounds: dict = {}
+        try:
+            pr = await pipeline.parse_via_triage(
+                body.text,
+                now=now,
+                user_food_keys=frozenset(user_foods),
+                open_session=session_summary,
+                alias_memories=";".join(
+                    r.content for r in memory_rows if r.kind == "alias"
+                )
+                or None,
+                all_memories=";".join(r.content for r in memory_rows) or None,
+                rounds_sink=rounds,
+                on_status=emit,
+            )
+            await emit({"stage": "saving"})
+            resolved = parser.build_records(
+                pr.output,
+                profile=profile,
+                now=now,
+                last_exercise_at=last_exercise.created_at if last_exercise else None,
+                user_foods=user_foods,
+            )
+            cards = await persist_records(
+                user, body.text, resolved, current_session, input_row
+            )
+            input_row.status = pr.status
+            input_row.ai_rounds = rounds or None
+            await input_row.save()
+            await queue.put(("records", cards))
+            await queue.put(
+                ("reply", {"text": compose_reply(resolved, pr.failed_texts)})
+            )
+        except Exception as e:
+            # 重试耗尽不再炸500(错例④):回人话,原话已留底可回放
+            logger.exception("整句解析失败,已留底")
+            rounds["error"] = f"{type(e).__name__}: {e}"
+            input_row.status = "failed"
+            input_row.ai_rounds = rounds
+            await input_row.save()
+            await queue.put(
+                ("reply", {"text": "这句我没解析出来(原话已留底),换个说法再试试?"})
+            )
+        finally:
+            await queue.put(None)
 
     async def stream():
-        yield _sse("records", cards)
-        yield _sse("reply", {"text": reply})
+        task = asyncio.create_task(process())
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            event, data = item
+            yield _sse(event, data)
+        await task
         # 回执已发完,趁连接收尾顺带做每日巩固(最佳努力,不增加用户等待)
         await maybe_consolidate_memories(user, now, memory_rows)
 
@@ -280,12 +313,20 @@ async def persist_records(
     return cards
 
 
-def compose_reply(resolved: list[parser.ResolvedRecord]) -> str:
-    """模板拼接的一句话回执,零 LLM 成本。"已记录"只冠给真正入库的部分。"""
-    if not resolved:
+def compose_reply(
+    resolved: list[parser.ResolvedRecord], failed_texts: list[str] | None = None
+) -> str:
+    """模板拼接的一句话回执,零 LLM 成本。"已记录"只冠给真正入库的部分。
+
+    failed_texts:专科降级没记上的原话片段(爆炸半径隔离的残段),明说不装懂。
+    """
+    if not resolved and not failed_texts:
         return "没听出要记的内容,换个说法试试?"
     parts = []
     hints = []  # 没入库的提示(如"记住"缺克数被打回),不冠"已记录"
+    if failed_texts:
+        quoted = "」「".join(failed_texts)
+        hints.append(f"有一段没听懂:「{quoted}」(原话已留底,可换个说法再说一次)")
     for r in resolved:
         if isinstance(r, parser.ResolvedWeight):
             parts.append(f"体重 {r.weight_kg:g}kg")

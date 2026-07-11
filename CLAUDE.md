@@ -30,7 +30,7 @@
    - **补油补调味显式原则**(2026-07-02 定油,2026-07-08 扩调味):炒/煎/炸没报油 → 自动补"菜籽油约10g"独立记录;糖/芝麻酱/沙拉酱/蚝油等高热量调味按做法常识自动补条(盐/醋/生抽忽略);均标 `llm_estimated`、可删可改,绝不隐性折进菜品热量;官方表无调味条目,表外调味必须带估算兜底。用户自己报了则用用户的
    - **表外食物的估算策略——AI 定结构,表定数值**(2026-07-02 定):表里没有的食物,LLM 优先拆解为表内食材(只估克重,不估热量)或锚定最相近的表内条目取值;实在无法借表,才允许 LLM 直接报热量数。三种路径一律标 `llm_estimated`
    - **表外力量动作归强度档**(2026-07-02 定):met 表不按动作穷举(运动生理学上动作名不影响耗能,强度和时长才影响)。表里没有同名条目的力量动作,LLM 判断强度归入"力量训练(中等/大强度)"取 MET 值,动作名/负重/次数保留用户原话照存,source 记 `met_table`。训练进度数据的准确性与表无关
-3. **LLM 输出必须用 Pydantic structured output 强约束**(discriminated union:`ExerciseRecord | FoodRecord | WeightRecord`),接口响应为 `list[ParseResult]`(一句话可能含多条记录;"今天75公斤"也是一句话记录)
+3. **LLM 输出必须用 Pydantic structured output 强约束**(discriminated union:`ExerciseRecord | FoodRecord | WeightRecord`),接口响应为 `list[ParseResult]`(一句话可能含多条记录;"今天75公斤"也是一句话记录)。**分诊轮唯一例外**(2026-07-11 分诊管线上线):开思考走"提示词约定 JSON+代码解析校验"通道,输出仍经 Pydantic 校验+照抄子串机器校验,不合格带错打回
 4. **静态数据走内存 dict,不用数据库、不用 RAG、不用向量检索**
    - `data/food.json`:约 1657 条,源自《中国食物成分表(第6版)》,字段:name/kcal/protein/fat/cho/fiber(每100g)
    - `data/met.json`:常见运动 MET 值表,含中文别名和按次数换算时长的规则(note 字段)
@@ -43,7 +43,7 @@
    - **读写不对称**(2026-07-02 定):写路径=管线+每步微循环(schema 校验/查表命中为硬反馈,失败带错重试,重试尽降级 llm_estimated),笔在代码手里;读路径(后续读代理)=PydanticAI 只读工具 agent,模型有完全自由——只读结构上无害
 8. **数据库迁移用 Tortoise 内置迁移系统**(`tortoise init / makemigrations / migrate`);不依赖 generate_schemas 自动建表
 9. **禁止 prompt hack**(2026-07-08 用户定):提示词只承载真正属于语言理解的职责(口语映射、明说信息的提取、个人叫法换算);凡能用输出 schema 字段、表数据、代码校验、封闭候选裁决解决的问题,一律结构化解决,不得用提示词打补丁
-10. **LLM 选型**(2026-07-03 用户扩定为通用接入):PydanticAI + **任意 OpenAI 兼容端点**,不绑定单一供应商。`.env` 四项:`LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`(**允许空**,兼容无鉴权本地部署)/ `LLM_EXTRA_BODY`(端点私有参数 JSON,可空)。当前默认 deepseek-v4-flash(需 `{"thinking":{"type":"disabled"}}` 关思考模式才能用结构化输出;旧 deepseek-chat 2026/07/24 弃用勿选)。换端点只改 `.env` 不改代码
+10. **LLM 选型**(2026-07-03 用户扩定为通用接入):PydanticAI + **任意 OpenAI 兼容端点**,不绑定单一供应商。`.env` 四项:`LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`(**允许空**,兼容无鉴权本地部署)/ `LLM_EXTRA_BODY`(端点私有参数 JSON,可空)。当前默认 deepseek-v4-flash(需 `{"thinking":{"type":"disabled"}}` 关思考模式才能用结构化输出;旧 deepseek-chat 2026/07/24 弃用勿选)。换端点只改 `.env` 不改代码。**思考模式口径(2026-07-11 分诊管线上线后)**:专科/裁决等结构化输出调用照旧关思考;唯分诊一轮开思考(代码将 extra_body 的 thinking 翻回 enabled),走提示词 JSON 通道——该端点拒绝"思考+强制工具调用"同时开
    - 程序内语音输入(流式 STT,WebSocket,不做整段往返)排在前端阶段,后端当前不实现;流式语音厂商用户已选定(待告知接入)
    - **模型设置界面永久不做**(2026-07-07 用户定):不支持用户自定义/切换模型,模型全局唯一,换模型=管理员改 `.env`;key 永不暴露给前端
    - **不做思考过程展示**(2026-07-04 用户定):写路径思考模式必须关(与结构化输出冲突),回复为模板拼接;将来有真实需求再议
