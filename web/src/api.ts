@@ -321,8 +321,19 @@ export async function fetchWeights(days = 30): Promise<WeightPoint[]> {
   ).map((w) => ({ id: w.id, at: new Date(w.created_at), kg: w.weight_kg }));
 }
 
-/** 发一句话记录:走对话接口(SSE),返回后端的模板回执 */
-export async function sendChat(text: string): Promise<string> {
+/** /chat 状态事件(契约 event:status):处理进度,纯增量 */
+export type ChatStatus =
+  | { stage: "triage" }
+  | { stage: "extract"; tracks: string[] }
+  | { stage: "track_done"; track: string }
+  | { stage: "saving" };
+
+/** 发一句话记录:走对话接口(SSE),返回后端的模板回执;
+ * 状态事件按到达顺序回调给 onStatus(过程面板消费) */
+export async function sendChat(
+  text: string,
+  onStatus?: (s: ChatStatus) => void,
+): Promise<string> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -362,6 +373,12 @@ export async function sendChat(text: string): Promise<string> {
           reply = (JSON.parse(data) as { text?: string }).text ?? "";
         } catch {
           /* 数据块解析失败则沿用已有回执 */
+        }
+      } else if (event === "status" && data && onStatus) {
+        try {
+          onStatus(JSON.parse(data) as ChatStatus);
+        } catch {
+          /* 状态事件坏了不影响主链路 */
         }
       }
     }

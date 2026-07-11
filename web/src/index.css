@@ -76,6 +76,54 @@ body {
   animation-delay: 0.3s;
 }
 
+/* 过程面板:当前节点呼吸(仅发送后的几秒存在,非常驻装饰动画) */
+@keyframes node-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.72;
+  }
+}
+.node-pulse {
+  animation: node-pulse 1.2s ease-in-out infinite;
+}
+
+/* 过程面板:亮点在连线上流动 */
+@keyframes flow-x {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+.proc-flow {
+  background-image: linear-gradient(
+    90deg,
+    rgba(58, 115, 80, 0) 0%,
+    rgba(58, 115, 80, 0.85) 50%,
+    rgba(58, 115, 80, 0) 100%
+  );
+  background-size: 60% 100%;
+  background-repeat: no-repeat;
+  animation: flow-x 0.9s linear infinite;
+}
+
+/* 过程面板:收场(缩小淡出,让位回执气泡) */
+@keyframes proc-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.9);
+  }
+}
+.proc-out {
+  animation: proc-out 0.24s ease-in both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .float-a,
   .float-b,
@@ -84,7 +132,9 @@ body {
   .unfold,
   .sheet-up,
   .page-in,
-  .fade-in {
+  .fade-in,
+  .node-pulse,
+  .proc-flow {
     animation: none;
   }
 }

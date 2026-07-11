@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dumbbell, NotebookPen, Settings, UtensilsCrossed } from "lucide-react";
 import {
+  type ChatStatus,
   deleteRecord,
   fetchDay,
   fetchUser,
@@ -13,6 +14,7 @@ import { GroupCard } from "@/components/GroupCard";
 import { Hero } from "@/components/Hero";
 import { InputBar } from "@/components/InputBar";
 import { ItemSheet } from "@/components/ItemSheet";
+import { ProcessPanel } from "@/components/ProcessPanel";
 import { SettingsPage } from "@/components/SettingsPage";
 import { TopBar } from "@/components/TopBar";
 import { addDays, dateLabel, isToday, subLabel, toISODate } from "@/lib/date";
@@ -115,6 +117,15 @@ function App() {
     null,
   );
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 过程面板:一次发送一份状态事件流;seq 换值强制重挂,连发不串台
+  const [proc, setProc] = useState<{
+    seq: number;
+    events: ChatStatus[];
+    done: boolean;
+  } | null>(null);
+  const procSeq = useRef(0);
+  // 回执压到面板收场后再弹,两者同位不打架
+  const pendingToast = useRef<{ text: string; error: boolean } | null>(null);
 
   const showToast = (text: string, isError = false) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -161,19 +172,42 @@ function App() {
 
   const handleSend = async (text: string): Promise<boolean> => {
     setSending(true);
+    setToast(null); // 旧气泡先退场,发送期间舞台交给过程面板
+    // 上一条回执还压着没弹(面板收场中就连发)则先弹出来
+    if (pendingToast.current) {
+      showToast(pendingToast.current.text, pendingToast.current.error);
+      pendingToast.current = null;
+    }
+    procSeq.current += 1;
+    setProc({ seq: procSeq.current, events: [], done: false });
     try {
-      const reply = await sendChat(text);
-      showToast(reply);
+      const reply = await sendChat(text, (s) =>
+        setProc((p) => (p ? { ...p, events: [...p.events, s] } : p)),
+      );
+      pendingToast.current = { text: reply, error: false };
       // 记录永远落在"现在":不在今天就跳回今天,否则原地静默刷新
       if (isToday(date)) await load(date, true);
       else setDate(new Date());
       loadWeights(); // 可能记了体重,顺带刷新曲线数据
       return true;
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "发送失败", true);
+      pendingToast.current = {
+        text: e instanceof Error ? e.message : "发送失败",
+        error: true,
+      };
       return false;
     } finally {
+      setProc((p) => (p ? { ...p, done: true } : p));
       setSending(false);
+    }
+  };
+
+  // 面板收场完毕:卸掉面板,弹出压着的回执
+  const handleProcGone = () => {
+    setProc(null);
+    if (pendingToast.current) {
+      showToast(pendingToast.current.text, pendingToast.current.error);
+      pendingToast.current = null;
     }
   };
 
@@ -281,6 +315,16 @@ function App() {
           </>
         )}
       </main>
+
+      {/* 发送后的过程面板:节点逐个点亮,走完收起让位回执 */}
+      {proc && (
+        <ProcessPanel
+          key={proc.seq}
+          events={proc.events}
+          done={proc.done}
+          onGone={handleProcGone}
+        />
+      )}
 
       {/* 回执气泡 */}
       {toast && (
