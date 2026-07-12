@@ -90,8 +90,12 @@ enum API {
         return try decoder.decode(WeightsResponse.self, from: data).weights
     }
 
-    /// 发一句话记录:SSE 流,取 reply 事件里的模板回执
-    static func sendChat(_ text: String) async throws -> String {
+    /// 发一句话记录:SSE 流,取 reply 事件里的模板回执;
+    /// 状态事件(event:status)按到达顺序回调给 onStatus,过程面板消费
+    static func sendChat(
+        _ text: String,
+        onStatus: (@Sendable (ChatStatus) -> Void)? = nil
+    ) async throws -> String {
         var req = URLRequest(url: base.appending(path: "chat"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -108,11 +112,14 @@ enum API {
         for try await line in bytes.lines {
             if line.hasPrefix("event:") {
                 event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
-            } else if line.hasPrefix("data:"), event == "reply" {
+            } else if line.hasPrefix("data:") {
                 let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                if let d = payload.data(using: .utf8),
-                   let obj = try? decoder.decode(ReplyData.self, from: d) {
+                guard let d = payload.data(using: .utf8) else { continue }
+                if event == "reply", let obj = try? decoder.decode(ReplyData.self, from: d) {
                     reply = obj.text
+                } else if event == "status",
+                          let s = try? decoder.decode(ChatStatus.self, from: d) {
+                    onStatus?(s) // 状态事件坏了不影响主链路(解码失败静默跳过)
                 }
             }
         }
@@ -183,6 +190,14 @@ private struct ChatIn: Encodable {
 }
 
 private struct ReplyData: Decodable { let text: String }
+
+/// /chat 状态事件(契约 event:status):处理进度,纯增量
+/// stage: triage / extract(带 tracks)/ track_done(带 track)/ saving
+struct ChatStatus: Decodable, Sendable {
+    let stage: String
+    var tracks: [String]?
+    var track: String?
+}
 private struct ErrorDetail: Decodable { let detail: String }
 
 /// 身体档案(GET /users/{id}):昵称给头像球,其余供设置页读改

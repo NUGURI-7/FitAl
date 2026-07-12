@@ -23,6 +23,13 @@ struct HomeView: View {
     @State private var toast: String?
     @State private var toastIsError = false
     @State private var sendCount = 0
+    // 过程面板:一次发送一份状态事件流;seq 换值强制重挂,连发不串台
+    @State private var procEvents: [ChatStatus] = []
+    @State private var procDone = false
+    @State private var procActive = false
+    @State private var procSeq = 0
+    // 回执压到面板收场后再弹,两者同位不打架
+    @State private var pendingToast: (text: String, error: Bool)?
     @State private var expandedDishes: Set<String> = []
     @State private var armedDishID: String?
     @State private var dishDeleting = false
@@ -661,6 +668,19 @@ struct HomeView: View {
 
     private var inputBar: some View {
         VStack(spacing: 8) {
+            // 发送后的过程面板:节点逐个点亮,走完收起让位回执
+            if procActive {
+                ProcessPanel(events: procEvents, done: procDone) {
+                    procActive = false
+                    if let p = pendingToast {
+                        showToast(p.text, error: p.error)
+                        pendingToast = nil
+                    }
+                }
+                .id(procSeq)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             if let toast {
                 Text(toast)
                     .font(.system(size: 13))
@@ -696,6 +716,7 @@ struct HomeView: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .animation(.spring(duration: 0.4), value: toast)
+        .animation(.spring(duration: 0.4), value: procActive)
     }
 
     // MARK: - 头像球菜单(液态玻璃,齿轮从球里长出来;后续新功能继续往上摞球)
@@ -800,17 +821,30 @@ struct HomeView: View {
         guard !text.isEmpty, !sending else { return }
         sending = true
         inputText = ""
+        toast = nil // 旧气泡先退场,发送期间舞台交给过程面板
+        // 上一条回执还压着没弹(面板收场中就连发)则先弹出来
+        if let p = pendingToast {
+            showToast(p.text, error: p.error)
+            pendingToast = nil
+        }
+        procSeq += 1
+        procEvents = []
+        procDone = false
+        procActive = true
         Task {
             do {
-                let reply = try await API.sendChat(text)
+                let reply = try await API.sendChat(text) { s in
+                    Task { @MainActor in procEvents.append(s) }
+                }
                 sendCount += 1
-                showToast(reply)
+                pendingToast = (reply, false)
                 if dayOffset != 0 { dayOffset = 0 } // 记录永远落在"现在",发送后跳回今天
                 await load()
             } catch {
-                showToast("发送失败:\(error.localizedDescription)", error: true)
+                pendingToast = ("发送失败:\(error.localizedDescription)", true)
                 inputText = text // 失败还回输入,方便重发
             }
+            procDone = true
             sending = false
         }
     }
