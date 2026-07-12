@@ -107,19 +107,27 @@ ResolvedRecord = (
 def build_records(
     parsed: ParseOutput,
     *,
-    profile: Profile,
+    profile: Profile | None,
     now: datetime,
     last_exercise_at: datetime | None = None,
     user_foods: dict[str, UserFoodDef] | None = None,
 ) -> list[ResolvedRecord]:
-    bmr = lookup.bmr_kcal_per_day(
-        profile.weight_kg, profile.height_cm, profile.sex, profile.birth_year, now
+    # profile 为空=用户还没有任何体重记录(注册首句场景):吃的/体重/记住照常,
+    # 运动算不出消耗——入口已把运动段过滤并提示,这里再防御性跳过一次
+    bmr = (
+        lookup.bmr_kcal_per_day(
+            profile.weight_kg, profile.height_cm, profile.sex, profile.birth_year, now
+        )
+        if profile is not None
+        else None
     )
     records: list[ResolvedRecord] = []
     for item in parsed.items:
         if isinstance(item, ParsedWeight):
             records.append(ResolvedWeight(weight_kg=item.weight_kg))
         elif isinstance(item, ParsedExercise):
+            if bmr is None:
+                continue
             records.append(_resolve_exercise(item, bmr, now, last_exercise_at))
             last_exercise_at = now  # 同一句里的多组按顺序衔接
         elif isinstance(item, ParsedUserFoodDef | ParsedMemory):

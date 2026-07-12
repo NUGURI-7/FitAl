@@ -96,6 +96,42 @@ async def test_部分降级状态partial且回执明说没听懂(db, monkeypatch
     assert await FoodRecord.filter(user=user).count() == 1
 
 
+async def test_澄清段挂起待补且流里推澄清事件(db, monkeypatch):
+    user = await _user(nick="澄清挂起")
+    clarify = {
+        "text": "做了卧推",
+        "questions": [
+            {
+                "key": "reps_0",
+                "prompt": "卧推:做了几个?",
+                "unit": "个",
+                "required": False,
+            }
+        ],
+        "min_answers": 1,
+        "half_product": {"items": [{"name": "卧推"}], "strategy": {"mode": "realtime"}},
+    }
+    result = pipeline.PipelineResult(
+        output=ParseOutput(
+            items=[ParsedFood(spoken_name="黄瓜", name="黄瓜(鲜)", grams=100)]
+        ),
+        clarify=clarify,
+    )
+    monkeypatch.setattr(pipeline, "parse_via_triage", _fake_pipeline(result))
+
+    resp = await api.chat(api.ChatIn(text="吃了根黄瓜100克,做了卧推"), user)
+    body = await _drain(resp)
+
+    # 事件顺序:记录卡片 → 澄清事件 → 回执;回执明说差个数
+    assert body.index("records") < body.index("clarify") < body.index("reply")
+    assert "做了几个" in body and "还差个数" in body
+    row = await Input.get(user=user)
+    assert row.status == "need_clarify"
+    assert row.pending_clarify["status_after"] == "ok"  # 补交成功后该回的状态
+    assert row.pending_clarify["min_answers"] == 1
+    assert await FoodRecord.filter(user=user).count() == 1  # 同句其他段照常入库
+
+
 async def test_删输入行不动记录(db, monkeypatch):
     user = await _user(nick="删输入")
     result = pipeline.PipelineResult(
@@ -111,3 +147,70 @@ async def test_删输入行不动记录(db, monkeypatch):
 
     food = await FoodRecord.get(user=user)  # raw 是唯一事实源,记录还在
     assert food.input_id is None
+
+
+# ── 没体重的新用户(2026-07-12 修"第一句想记体重却被拒"死循环) ──────────────
+
+
+async def _fresh_user(nick="新注册"):
+    return await User.create(
+        nickname=nick, height_cm=170, sex="female", birth_year=1999
+    )
+
+
+async def test_新用户没体重_第一句记体重_不再被拒(db, monkeypatch):
+    user = await _fresh_user()
+    result = pipeline.PipelineResult(
+        output=ParseOutput(items=[ParsedWeight(weight_kg=68)])
+    )
+    monkeypatch.setattr(pipeline, "parse_via_triage", _fake_pipeline(result))
+
+    resp = await api.chat(api.ChatIn(text="今天的体重是68千克"), user)
+    body = await _drain(resp)
+
+    assert (await WeightRecord.get(user=user)).weight_kg == 68
+    assert (await Input.get(user=user)).status == "ok"
+    assert "无法计算" not in body
+
+
+async def test_新用户没体重_同句带体重和运动_运动照常算消耗(db, monkeypatch):
+    from app.ai.schema import ParsedExercise
+
+    from app.models import ExerciseRecord
+
+    user = await _fresh_user(nick="新注册2")
+    result = pipeline.PipelineResult(
+        output=ParseOutput(
+            items=[
+                ParsedWeight(weight_kg=68),
+                ParsedExercise(name="跑步", duration_min=30),
+            ]
+        )
+    )
+    monkeypatch.setattr(pipeline, "parse_via_triage", _fake_pipeline(result))
+
+    resp = await api.chat(api.ChatIn(text="今天68公斤,跑了30分钟"), user)
+    await _drain(resp)
+
+    ex = await ExerciseRecord.get(user=user)
+    assert ex.kcal > 0  # 用同句报的体重当场算出消耗
+    assert (await Input.get(user=user)).status == "ok"
+
+
+async def test_新用户没体重_只报运动_该段降级并提示先记体重(db, monkeypatch):
+    from app.ai.schema import ParsedExercise
+
+    from app.models import ExerciseRecord
+
+    user = await _fresh_user(nick="新注册3")
+    result = pipeline.PipelineResult(
+        output=ParseOutput(items=[ParsedExercise(name="跑步", duration_min=30)])
+    )
+    monkeypatch.setattr(pipeline, "parse_via_triage", _fake_pipeline(result))
+
+    resp = await api.chat(api.ChatIn(text="跑了30分钟"), user)
+    body = await _drain(resp)
+
+    assert await ExerciseRecord.filter(user=user).count() == 0  # 没编数,老实没记
+    assert "体重" in body  # 回执提示先记一句体重
+    assert (await Input.get(user=user)).status == "partial"  # 有一段没记上
