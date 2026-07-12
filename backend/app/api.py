@@ -14,7 +14,13 @@ from tortoise import Tortoise, timezone
 from tortoise.exceptions import IntegrityError
 
 from app.ai import aggregate, lookup, parser, pipeline
-from app.ai.schema import ParsedMemory, ParsedUserFoodDef
+from app.ai.schema import (
+    ParsedExercise,
+    ParsedMemory,
+    ParsedUserFoodDef,
+    ParsedWeight,
+    ParseOutput,
+)
 from app.config import settings
 from app.models import (
     AiMemory,
@@ -153,15 +159,18 @@ class ChatIn(BaseModel):
 async def chat(body: ChatIn, user: User = Depends(current_user)) -> StreamingResponse:
     """唯一对话入口(契约①)。v1 仅 intent=record:洗数据→raw→聚合→new。"""
     latest_weight = await WeightRecord.filter(user=user).order_by("-created_at").first()
-    if latest_weight is None:
-        raise HTTPException(409, "该用户还没有体重记录,无法计算消耗")
-
     now = timezone.now()  # aware UTC,与 auto_now_add 同一时钟,间隔计算才可靠
-    profile = parser.Profile(
-        weight_kg=latest_weight.weight_kg,
-        height_cm=user.height_cm,
-        sex=user.sex,
-        birth_year=user.birth_year,
+    # 没体重不再整句拒绝(2026-07-12 修注册新用户"第一句想记体重却被拒"死循环):
+    # 吃的/体重/"记住"照常;只有运动算不出消耗,解析后单独降级并提示先记体重
+    profile = (
+        parser.Profile(
+            weight_kg=latest_weight.weight_kg,
+            height_cm=user.height_cm,
+            sex=user.sex,
+            birth_year=user.birth_year,
+        )
+        if latest_weight is not None
+        else None
     )
     last_exercise = (
         await ExerciseRecord.filter(user=user).order_by("-created_at").first()
@@ -208,9 +217,33 @@ async def chat(body: ChatIn, user: User = Depends(current_user)) -> StreamingRes
                 on_status=emit,
             )
             await emit({"stage": "saving"})
+            # 没体重的新用户:同句自带体重就直接采用(当句运动也算得出);
+            # 否则把运动段摘出来降级(其余照常入库),回执提示先记体重
+            build_profile = profile
+            weight_hint = False
+            if build_profile is None:
+                spoken = [i for i in pr.output.items if isinstance(i, ParsedWeight)]
+                if spoken:
+                    build_profile = parser.Profile(
+                        weight_kg=spoken[-1].weight_kg,  # 同句多报以更正后的为准
+                        height_cm=user.height_cm,
+                        sex=user.sex,
+                        birth_year=user.birth_year,
+                    )
+                else:
+                    kept = [
+                        i for i in pr.output.items if not isinstance(i, ParsedExercise)
+                    ]
+                    weight_hint = len(kept) != len(pr.output.items)
+                    pr.output.items = kept
+                    if weight_hint:
+                        # 只影响输入行状态(partial),提示语由下方 weight_hint 出
+                        pr.failed_tracks.setdefault(
+                            "exercise", "没有体重记录,算不出消耗"
+                        )
             resolved = parser.build_records(
                 pr.output,
-                profile=profile,
+                profile=build_profile,
                 now=now,
                 last_exercise_at=last_exercise.created_at if last_exercise else None,
                 user_foods=user_foods,
@@ -218,13 +251,39 @@ async def chat(body: ChatIn, user: User = Depends(current_user)) -> StreamingRes
             cards = await persist_records(
                 user, body.text, resolved, current_session, input_row
             )
-            input_row.status = pr.status
+            if pr.clarify:
+                # 待补态:半成品+问题清单存行上(无状态标识路线,唯一共享上下文);
+                # status_after=补交成功后该回到的状态(句中曾有失败段则 partial)
+                input_row.status = "need_clarify"
+                input_row.pending_clarify = {**pr.clarify, "status_after": pr.status}
+            else:
+                input_row.status = pr.status
             input_row.ai_rounds = rounds or None
             await input_row.save()
             await queue.put(("records", cards))
-            await queue.put(
-                ("reply", {"text": compose_reply(resolved, pr.failed_texts)})
+            if pr.clarify:
+                await queue.put(
+                    (
+                        "clarify",
+                        {
+                            "input_id": input_row.id,
+                            "text": pr.clarify["text"],
+                            "questions": pr.clarify["questions"],
+                            "min_answers": pr.clarify["min_answers"],
+                        },
+                    )
+                )
+            reply_text = compose_reply(
+                resolved, pr.failed_texts, clarify_pending=pr.clarify is not None
             )
+            if weight_hint:
+                need = "先说一句体重(比如「今天68公斤」),运动消耗才算得出来"
+                reply_text = (
+                    f"还没有体重记录,{need};刚才那段运动先没记。"
+                    if not resolved and not pr.failed_texts
+                    else f"{reply_text} 另外运动那段先没记:还没有体重记录,{need}。"
+                )
+            await queue.put(("reply", {"text": reply_text}))
         except Exception as e:
             # 重试耗尽不再炸500(错例④):回人话,原话已留底可回放
             logger.exception("整句解析失败,已留底")
@@ -408,19 +467,24 @@ async def persist_records(
 
 
 def compose_reply(
-    resolved: list[parser.ResolvedRecord], failed_texts: list[str] | None = None
+    resolved: list[parser.ResolvedRecord],
+    failed_texts: list[str] | None = None,
+    clarify_pending: bool = False,
 ) -> str:
     """模板拼接的一句话回执,零 LLM 成本。"已记录"只冠给真正入库的部分。
 
-    failed_texts:专科降级没记上的原话片段(爆炸半径隔离的残段),明说不装懂。
+    failed_texts:专科降级没记上的原话片段(爆炸半径隔离的残段),明说不装懂;
+    clarify_pending:运动段还差个数在等补交(契约 event:clarify),明说不装死。
     """
-    if not resolved and not failed_texts:
+    if not resolved and not failed_texts and not clarify_pending:
         return "没听出要记的内容,换个说法试试?"
     parts = []
     hints = []  # 没入库的提示(如"记住"缺克数被打回),不冠"已记录"
     if failed_texts:
         quoted = "」「".join(failed_texts)
         hints.append(f"有一段没听懂:「{quoted}」(原话已留底,可换个说法再说一次)")
+    if clarify_pending:
+        hints.append("运动那段还差个数,答一下上面的问题就能记上")
     for r in resolved:
         if isinstance(r, parser.ResolvedWeight):
             parts.append(f"体重 {r.weight_kg:g}kg")
@@ -452,6 +516,66 @@ def compose_reply(
     if hints:
         out.append(";".join(hints))
     return ";".join(out)
+
+
+# ── 澄清补交(契约 2026-07-12):答案填洞→纯代码后段,零 AI 二次调用 ─────────
+
+
+class ClarifyIn(BaseModel):
+    answers: dict[str, float]
+
+
+@router.post("/inputs/{input_id}/clarify")
+async def clarify_input(
+    input_id: int, body: ClarifyIn, user: User = Depends(current_user)
+) -> dict:
+    """澄清补交:查本人待补输入行 → 答案填进半成品的洞 → 重跑纯代码校验 →
+    纯代码后段(补报展开/查表算数/入库/归组),模型的活第一次请求已干完。
+    记录时间戳=补交时刻("记录永远落在说话这一刻"同哲学)。"""
+    row = await Input.get_or_none(id=input_id, user_id=user.id)
+    if row is None:  # 别人的输入行如同不存在
+        raise HTTPException(404, "输入不存在")
+    if row.status != "need_clarify" or not row.pending_clarify:
+        raise HTTPException(409, "该输入不在待补状态(可能已补过)")
+    if not body.answers:
+        raise HTTPException(400, "没有收到任何答案")
+    pending = row.pending_clarify
+    try:
+        out = pipeline.resume_clarify(pending, body.answers)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+    latest_weight = await WeightRecord.filter(user=user).order_by("-created_at").first()
+    if latest_weight is None:  # 打回不消耗待补态:记完体重可再来补交
+        raise HTTPException(
+            409, "还没有体重记录,先说一句体重(比如「今天68公斤」)再来补交"
+        )
+    now = timezone.now()
+    profile = parser.Profile(
+        weight_kg=latest_weight.weight_kg,
+        height_cm=user.height_cm,
+        sex=user.sex,
+        birth_year=user.birth_year,
+    )
+    last_exercise = (
+        await ExerciseRecord.filter(user=user).order_by("-created_at").first()
+    )
+    current_session = await aggregate.open_session(user, now)
+
+    items = out.items
+    if out.strategy.mode == "backfill" and out.strategy.total_duration_min:
+        items = pipeline.expand_backfill(items, out.strategy.total_duration_min)
+    resolved = parser.build_records(
+        ParseOutput(items=items),
+        profile=profile,
+        now=now,
+        last_exercise_at=last_exercise.created_at if last_exercise else None,
+    )
+    cards = await persist_records(user, pending["text"], resolved, current_session, row)
+    row.status = pending.get("status_after") or "ok"
+    row.pending_clarify = None
+    await row.save()
+    return {"records": cards, "reply": compose_reply(resolved)}
 
 
 # ── 修正/删除(契约②):只落 raw,触发所在聚合增量重算 ─────────────────────

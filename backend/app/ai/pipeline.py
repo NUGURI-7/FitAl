@@ -54,6 +54,9 @@ class PipelineResult:
     output: ParseOutput  # 合并后的解析结果(已完成第二轮裁决),直接喂 build_records
     failed_tracks: dict[str, str] = field(default_factory=dict)  # 科 -> 错误
     failed_texts: list[str] = field(default_factory=list)  # 失败段原话(回执用)
+    # 待澄清(罕见兜底):{text, questions, min_answers, half_product};
+    # 该段不入库,由调用方存输入行+推 event:clarify,补交走 resume_clarify
+    clarify: dict | None = None
 
     @property
     def status(self) -> str:
@@ -313,15 +316,10 @@ def eat_agent() -> Agent:
     return _specialist(_eat_instructions())
 
 
-def exercise_problems(out: ExerciseParseOutput) -> list[str]:
-    """运动专科的硬校验(策略层,错例①方案):合法性归代码。"""
+def exercise_blockers(out: ExerciseParseOutput) -> list[str]:
+    """运动专科的硬伤(不可澄清):重试尽仍在 → 该科照旧失败,问用户也没用。"""
     problems = []
     s = out.strategy
-    if s.mode == "backfill" and not s.total_duration_min:
-        problems.append(
-            "补报整场(backfill)必须给 total_duration_min:明说照抄(stated),"
-            "没明说按常识估计(estimated)"
-        )
     if s.mode == "realtime" and any((i.sets or 1) > 1 for i in out.items):
         problems.append("出现多组(sets>1)应判为补报整场:mode=backfill 并给总时长")
     for item in out.items:
@@ -334,15 +332,119 @@ def exercise_problems(out: ExerciseParseOutput) -> list[str]:
             problems.append(
                 f"{item.name}: 不在MET表,需给 fallback_tier(力量)或 est_met(有氧)"
             )
-        if (
-            s.mode == "realtime"
-            and item.reported_kcal is None
-            and item.duration_min is None
-            and item.reps is None
-        ):
-            # 补报模式不作此要求:缺次数由分摊权重兜底,时长来自整场分摊
-            problems.append(f"{item.name}: 缺时长或次数")
     return problems
+
+
+def _hole_items(out: ExerciseParseOutput) -> list[tuple[int, str]]:
+    """实时模式下"缺数的洞"所在条目:(下标, 动作名)。补报模式缺次数合法,不算洞。"""
+    if out.strategy.mode != "realtime":
+        return []
+    return [
+        (idx, item.name)
+        for idx, item in enumerate(out.items)
+        if item.reported_kcal is None
+        and item.duration_min is None
+        and item.reps is None
+    ]
+
+
+def exercise_hole_problems(out: ExerciseParseOutput) -> list[str]:
+    """缺数的洞(可澄清):微循环先照旧打回让模型自己补;重试尽才转澄清表单。"""
+    problems = []
+    if out.strategy.mode == "backfill" and not out.strategy.total_duration_min:
+        problems.append(
+            "补报整场(backfill)必须给 total_duration_min:明说照抄(stated),"
+            "没明说按常识估计(estimated)"
+        )
+    problems += [f"{name}: 缺时长或次数" for _, name in _hole_items(out)]
+    return problems
+
+
+def exercise_problems(out: ExerciseParseOutput) -> list[str]:
+    """运动专科的硬校验(策略层,错例①方案):合法性归代码。"""
+    return exercise_blockers(out) + exercise_hole_problems(out)
+
+
+def exercise_clarify(out: ExerciseParseOutput, texts: list[str]) -> dict | None:
+    """重试尽只剩缺数的洞 → 组装澄清请求(契约 event:clarify,2026-07-12)。
+
+    问题固定=一句问话+数字输入框+单位,不做通用表单 DSL;半成品原貌随行存档,
+    补交时答案填洞、纯代码续算(resume_clarify)。
+    """
+    questions: list[dict] = []
+    min_answers = 0
+    if out.strategy.mode == "backfill" and not out.strategy.total_duration_min:
+        questions.append(
+            {
+                "key": "total_duration_min",
+                "prompt": "这场一共练了多久?",
+                "unit": "分钟",
+                "required": True,
+            }
+        )
+        min_answers += 1
+    for idx, name in _hole_items(out):
+        # 次数/时长answering其一即可:两问一组,组内至少答一个
+        questions.append(
+            {
+                "key": f"reps_{idx}",
+                "prompt": f"{name}:做了几个?",
+                "unit": "个",
+                "required": False,
+            }
+        )
+        questions.append(
+            {
+                "key": f"duration_min_{idx}",
+                "prompt": f"{name}:练了多久?",
+                "unit": "分钟",
+                "required": False,
+            }
+        )
+        min_answers += 1
+    if not questions:
+        return None
+    return {
+        "text": ";".join(texts),
+        "questions": questions,
+        "min_answers": min_answers,
+        "half_product": out.model_dump(mode="json"),
+    }
+
+
+def resume_clarify(pending: dict, answers: dict[str, float]) -> ExerciseParseOutput:
+    """澄清补交:答案填进半成品的洞,重跑同套纯代码校验;不合格抛 ValueError 带缺啥。"""
+    out = ExerciseParseOutput.model_validate(pending["half_product"])
+    for key, value in answers.items():
+        if value is None or value <= 0:
+            raise ValueError(f"{key}: 请填正数")
+        if key == "total_duration_min":
+            out.strategy.total_duration_min = float(value)
+            out.strategy.duration_basis = "stated"  # 补交=用户明说
+            continue
+        for prefix, field_name in (
+            ("reps_", "reps"),
+            ("duration_min_", "duration_min"),
+        ):
+            if key.startswith(prefix):
+                try:
+                    idx = int(key[len(prefix) :])
+                    item = out.items[idx]
+                except (ValueError, IndexError):
+                    raise ValueError(f"未知问题:{key}") from None
+                if field_name == "reps":
+                    item.reps = int(round(value))
+                else:
+                    item.duration_min = float(value)
+                break
+        else:
+            raise ValueError(f"未知问题:{key}")
+    remaining = exercise_clarify(out, [])
+    if remaining:
+        raise ValueError(
+            "还差:" + ";".join(q["prompt"] for q in remaining["questions"])
+        )
+    return out
 
 
 @lru_cache(maxsize=1)
@@ -361,9 +463,12 @@ def exercise_agent() -> Agent:
         ctx: RunContext[frozenset], output: ExerciseParseOutput
     ) -> ExerciseParseOutput:
         problems = exercise_problems(output)
-        if problems:
+        if problems and ctx.retry < parser.MAX_PARSE_RETRIES:
             raise ModelRetry("以下条目不合格,请修正后重新输出:" + ";".join(problems))
-        return output
+        blockers = exercise_blockers(output)
+        if blockers:  # 重试尽仍有不可澄清的硬伤 → 照旧耗尽失败
+            raise ModelRetry("以下条目不合格,请修正后重新输出:" + ";".join(blockers))
+        return output  # 干净,或只剩缺数的洞(上层转澄清,不判失败)
 
     return agent
 
@@ -424,8 +529,8 @@ async def _extract_track(
     user_food_keys: frozenset[str],
     open_session: str | None,
     memories: str | None,
-) -> tuple[ParseOutput, dict]:
-    """返回 (可合并的解析结果, 该轮 AI 原始吐出的存档)。"""
+) -> tuple[ParseOutput, dict, dict | None]:
+    """返回 (可合并的解析结果, 该轮 AI 原始吐出的存档, 待澄清请求或 None)。"""
     local_now = now.astimezone(ZoneInfo(settings.TIMEZONE)) if now.tzinfo else now
     prefix = f"[当前时间 {local_now:%Y-%m-%d %H:%M}]"
     if track == "exercise" and open_session:
@@ -439,17 +544,20 @@ async def _extract_track(
             await exercise_agent().run(prompt, deps=user_food_keys)
         ).output
         dump = out.model_dump(mode="json")  # 存档带策略,展开前的原貌
+        clarify = exercise_clarify(out, texts)
+        if clarify:  # 重试尽只剩缺数的洞:该段整体挂起等补交,不入库不判失败
+            return ParseOutput(items=[]), dump, clarify
         items = out.items
         if out.strategy.mode == "backfill" and out.strategy.total_duration_min:
             items = expand_backfill(items, out.strategy.total_duration_min)
-        return ParseOutput(items=items), dump
+        return ParseOutput(items=items), dump, None
 
     agent = {"eat": eat_agent, "remember": remember_agent}[track]()
     output = (await agent.run(prompt, deps=user_food_keys)).output
     dump = output.model_dump(mode="json")
     allowed = TRACK_TYPES[track]
     output.items = [i for i in output.items if isinstance(i, allowed)]  # 越界丢弃
-    return output, dump
+    return output, dump, None
 
 
 # ── 编排:分诊 → 按类型并发 → 合并 → 第二轮裁决 ─────────────────────────
@@ -515,7 +623,9 @@ async def parse_via_triage(
             if rounds_sink is not None:
                 rounds_sink[track] = {"error": result.failed_tracks[track]}
             continue
-        output, dump = res
+        output, dump, clarify = res
+        if clarify:
+            result.clarify = clarify
         if track == "eat":  # 分诊提的餐次槽:专科没填而段里明说了,单段时回填
             eat_segs = by_type["eat"]
             if len(eat_segs) == 1 and eat_segs[0].meal_slot:

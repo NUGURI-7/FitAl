@@ -89,8 +89,12 @@ class Input(Model):
     text = fields.TextField()  # 原话全文,永久保留
     status = fields.CharField(
         max_length=16, default="pending"
-    )  # pending | ok | partial | failed
+    )  # pending | ok | partial | failed | need_clarify
     ai_rounds = fields.JSONField(null=True)  # {轮名: 原始输出} 错例回放用
+    # 待澄清(2026-07-12 澄清表单):段原话+问题清单+专科半成品——补交要用的
+    # 业务数据,与 ai_rounds 日志分工不混;补交成功后清空。无状态标识路线:
+    # 两次请求间服务器零记忆,唯一共享上下文就是这一行
+    pending_clarify = fields.JSONField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
