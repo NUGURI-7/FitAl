@@ -17,7 +17,13 @@ import { ItemSheet } from "@/components/ItemSheet";
 import { ProcessPanel } from "@/components/ProcessPanel";
 import { SettingsPage } from "@/components/SettingsPage";
 import { TopBar } from "@/components/TopBar";
-import { addDays, dateLabel, isToday, subLabel, toISODate } from "@/lib/date";
+import {
+  addDays,
+  dateLabel,
+  isToday,
+  subLabel,
+  toISODate,
+} from "@/lib/date";
 import type { DaySummary, DishEntry, Group, RecordItem } from "@/types";
 
 // 图表库较重,点开体重曲线时才加载
@@ -249,8 +255,12 @@ function App() {
         dateLabel={dateLabel(date)}
         subLabel={subLabel(date)}
         atToday={isToday(date)}
+        date={date}
         onPrev={() => setDate(addDays(date, -1))}
         onNext={() => setDate(addDays(date, 1))}
+        onPick={(d) => {
+          if (toISODate(d) !== toISODate(date)) setDate(d);
+        }}
       />
 
       <main className="mx-auto max-w-md px-4 pb-32">

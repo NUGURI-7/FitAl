@@ -36,6 +36,7 @@ struct HomeView: View {
     @State private var selected: SelectedRecord?
     @State private var deleteCount = 0
     @State private var showWeightSheet = false
+    @State private var showCalendar = false // 日历跳转:点顶栏日期直达任意历史日
 
     @State private var profile: UserProfile?
     @State private var menuOpen = false
@@ -95,6 +96,7 @@ struct HomeView: View {
                 Task { await load() }
             }
         }
+        .sheet(isPresented: $showCalendar) { calendarSheet }
         .task(id: dayOffset) { await load() }
         .task { profile = try? await API.fetchUser() } // 头像球首字;失败不显示球,不打扰主链路
         .onReceive(minuteTick) { _ in
@@ -130,6 +132,55 @@ struct HomeView: View {
         return f.string(from: shownDate)
     }
 
+    /// 月历选择 → 换算成"距今天几天"(只许今天及以前;选完自动收起)
+    private var calendarSelection: Binding<Date> {
+        Binding(
+            get: { shownDate },
+            set: { picked in
+                let cal = Calendar.current
+                let days = cal.dateComponents(
+                    [.day],
+                    from: cal.startOfDay(for: Date()),
+                    to: cal.startOfDay(for: picked)
+                ).day ?? 0
+                dayOffset = min(days, 0)
+                showCalendar = false
+            }
+        )
+    }
+
+    private var calendarSheet: some View {
+        VStack(spacing: 4) {
+            DatePicker(
+                "选择日期",
+                selection: calendarSelection,
+                in: ...Date(),
+                displayedComponents: .date
+            )
+            .datePickerStyle(.graphical)
+            .tint(Theme.brand)
+            .environment(\.locale, Locale(identifier: "zh_CN"))
+
+            if dayOffset != 0 {
+                Button {
+                    dayOffset = 0
+                    showCalendar = false
+                } label: {
+                    Text("回到今天")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.brand)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.paper)
+    }
+
     @ToolbarContentBuilder
     private var dateToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
@@ -140,14 +191,25 @@ struct HomeView: View {
             }
         }
         ToolbarItem(placement: .principal) {
-            VStack(spacing: 0) {
-                Text(dateTitle)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
-                Text(dateSubtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textSecondary)
+            // 点日期弹月历直达(2026-07-12 日历跳转),小箭头提示可点
+            Button {
+                showCalendar = true
+            } label: {
+                VStack(spacing: 0) {
+                    HStack(spacing: 3) {
+                        Text(dateTitle)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Text(dateSubtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
+            .buttonStyle(.plain)
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
