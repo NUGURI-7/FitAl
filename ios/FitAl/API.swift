@@ -95,32 +95,33 @@ enum API {
 
     private struct AuthResponse: Decodable { let token: String }
 
-    /// 登录:成功即把令牌收进钥匙串;失败后端统一回"昵称或密码不对"
-    static func login(nickname: String, password: String) async throws {
-        let body = try JSONEncoder().encode(["nickname": nickname, "password": password])
+    /// 登录:用户名+密码(2026-07-12 拆分,昵称只做显示);
+    /// 成功即把令牌收进钥匙串,失败后端统一回"用户名或密码不对"
+    static func login(username: String, password: String) async throws {
+        let body = try JSONEncoder().encode(["username": username, "password": password])
         let req = request("auth/login", method: "POST", body: body)
         let (data, resp) = try await session.data(for: req)
         try ensureOK(resp, data: data, kickOn401: false) // 密码不对是业务错误,不触发踢回
         AuthStore.save(try decoder.decode(AuthResponse.self, from: data).token)
     }
 
-    /// 注册:邀请码+昵称+密码+身体档案一并填;成功当场发令牌,免二次登录
+    /// 注册:邀请码+用户名+昵称(空=用用户名)+密码+身体档案;成功当场发令牌,免二次登录
     static func register(
-        inviteCode: String, nickname: String, password: String,
+        inviteCode: String, username: String, nickname: String?, password: String,
         heightCm: Double, sex: String, birthYear: Int
     ) async throws {
         struct RegisterIn: Encodable {
-            let inviteCode: String, nickname: String, password: String
+            let inviteCode: String, username: String, nickname: String?, password: String
             let heightCm: Double, sex: String, birthYear: Int
             enum CodingKeys: String, CodingKey {
-                case nickname, password, sex
+                case username, nickname, password, sex
                 case inviteCode = "invite_code"
                 case heightCm = "height_cm"
                 case birthYear = "birth_year"
             }
         }
         let body = try JSONEncoder().encode(RegisterIn(
-            inviteCode: inviteCode, nickname: nickname, password: password,
+            inviteCode: inviteCode, username: username, nickname: nickname, password: password,
             heightCm: heightCm, sex: sex, birthYear: birthYear
         ))
         let req = request("auth/register", method: "POST", body: body)
@@ -253,6 +254,8 @@ private struct ErrorDetail: Decodable { let detail: String }
 /// 身体档案(GET /users/me):昵称给头像球,其余供设置页读改
 struct UserProfile: Decodable {
     let id: Int
+    /// 登录标识,只读展示,不可改(2026-07-12 与昵称拆分)
+    let username: String?
     let nickname: String
     let heightCm: Double
     let sex: String

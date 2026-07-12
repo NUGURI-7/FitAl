@@ -72,7 +72,10 @@ async def _issue_token(user: User) -> str:
 
 class RegisterIn(BaseModel):
     invite_code: str = Field(min_length=1)
-    nickname: str = Field(min_length=1, max_length=50)
+    # 登录标识(2026-07-12 用户定,与昵称拆分):字母数字下划线3-20位,注册后不可改
+    username: str = Field(pattern=r"^[A-Za-z0-9_]{3,20}$")
+    # 纯显示名,允许重名;留空默认用用户名
+    nickname: str | None = Field(default=None, max_length=50)
     password: str = Field(min_length=6)
     # 身体档案注册页一并填(2026-07-12 用户定):档案列保持必填,计算代码零改动
     height_cm: float = Field(gt=0)
@@ -81,26 +84,28 @@ class RegisterIn(BaseModel):
 
 
 class LoginIn(BaseModel):
-    nickname: str
+    username: str
     password: str
 
 
 @router.post("/auth/register")
 async def register(body: RegisterIn) -> dict:
-    """验码未用 → 昵称未占 → 建用户 → 码作废 → 当场发令牌(免二次登录)。"""
+    """验码未用 → 用户名未占 → 建用户 → 码作废 → 当场发令牌(免二次登录)。"""
     code = await InviteCode.get_or_none(code=body.invite_code.strip())
     if code is None or code.used_at is not None:
         raise HTTPException(403, "邀请码无效或已被使用")
+    nickname = (body.nickname or "").strip() or body.username
     try:
         user = await User.create(
-            nickname=body.nickname.strip(),
+            username=body.username,
+            nickname=nickname,
             password_hash=_hash_password(body.password),
             height_cm=body.height_cm,
             sex=body.sex,
             birth_year=body.birth_year,
         )
     except IntegrityError:
-        raise HTTPException(409, "昵称已被占用") from None
+        raise HTTPException(409, "用户名已被占用") from None
     code.used_by = user
     code.used_at = timezone.now()
     await code.save()
@@ -109,15 +114,15 @@ async def register(body: RegisterIn) -> dict:
 
 @router.post("/auth/login")
 async def login(body: LoginIn) -> dict:
-    """失败统一一句话,不区分昵称还是密码错(不给撞库者线索)。
+    """失败统一一句话,不区分用户名还是密码错(不给撞库者线索)。
     password_hash 为空=登录上线前的存量用户,视同密码不对,等脚本补密码。"""
-    user = await User.get_or_none(nickname=body.nickname.strip())
+    user = await User.get_or_none(username=body.username.strip())
     if (
         user is None
         or user.password_hash is None
         or not _verify_password(body.password, user.password_hash)
     ):
-        raise HTTPException(401, "昵称或密码不对")
+        raise HTTPException(401, "用户名或密码不对")
     return {"token": await _issue_token(user), "user_id": user.id}
 
 
@@ -846,6 +851,7 @@ class UserPatch(BaseModel):
 def _user_out(user: User) -> dict:
     return {
         "id": user.id,
+        "username": user.username,  # 登录标识,只读展示,不可改
         "nickname": user.nickname,
         "height_cm": user.height_cm,
         "sex": user.sex,
@@ -867,10 +873,7 @@ async def patch_user(body: UserPatch, user: User = Depends(current_user)) -> dic
         raise HTTPException(422, "至少提供一个要修改的字段")
     for field, value in changes.items():
         setattr(user, field, value)
-    try:
-        await user.save()
-    except IntegrityError:
-        raise HTTPException(409, "昵称已被占用") from None
+    await user.save()  # 昵称已允许重名(2026-07-12 拆分),无唯一冲突可言
     return _user_out(user)
 
 

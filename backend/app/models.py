@@ -4,7 +4,11 @@ from tortoise.models import Model
 
 class User(Model):
     id = fields.IntField(primary_key=True)
-    nickname = fields.CharField(max_length=50, unique=True)
+    # 登录标识(2026-07-12 用户定,与昵称拆分):字母数字下划线3-20位,注册后不可改;
+    # 可空过渡——拆分前的存量用户无用户名,脚本补
+    username = fields.CharField(max_length=20, unique=True, null=True)
+    # 纯显示名,允许重名,设置页随便改;与登录无关
+    nickname = fields.CharField(max_length=50)
     # bcrypt 哈希;可空过渡——登录实施前的存量用户无密码,切换时脚本补
     password_hash = fields.CharField(max_length=128, null=True)
     # 身体档案:修正 MET 公式(Mifflin-St Jeor)用,一次性填;体重走 weight_records

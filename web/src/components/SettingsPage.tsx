@@ -221,6 +221,12 @@ export function SettingsPage({
           身体档案
         </p>
         <div className="space-y-2">
+          <div className="flex items-center justify-between rounded-xl bg-card px-4 py-3 ring-1 ring-black/[0.04]">
+            <span className="text-[13px] text-ink-soft">用户名</span>
+            <span className="text-[16px] font-semibold text-ink-soft">
+              {profile.username}
+            </span>
+          </div>
           <Field
             label="昵称"
             value={nickname}
@@ -259,8 +265,8 @@ export function SettingsPage({
         </div>
 
         <p className="px-1 pt-2 text-[11px] leading-relaxed text-ink-soft/80">
-          身高、性别、出生年份用于基础代谢与消耗计算;改档案不影响已存的记录,
-          汇总里现算的数字会自动按新档案计。
+          用户名是登录标识,不可改;昵称随便改、可重名。身高、性别、出生年份用于
+          基础代谢与消耗计算;改档案不影响已存的记录,汇总里现算的数字会自动按新档案计。
         </p>
 
         {error && <p className="px-1 pt-1 text-[12px] text-burn">{error}</p>}

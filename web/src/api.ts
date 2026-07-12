@@ -121,6 +121,9 @@ async function requestJSON(url: string, init?: RequestInit) {
 
 export interface RegisterBody {
   inviteCode: string;
+  /** 登录标识:字母数字下划线3-20位,注册后不可改 */
+  username: string;
+  /** 纯显示名,可重名;留空后端默认用用户名 */
   nickname: string;
   password: string;
   heightCm: number;
@@ -134,7 +137,8 @@ export async function register(b: RegisterBody): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       invite_code: b.inviteCode,
-      nickname: b.nickname,
+      username: b.username,
+      nickname: b.nickname || null,
       password: b.password,
       height_cm: b.heightCm,
       sex: b.sex,
@@ -144,11 +148,11 @@ export async function register(b: RegisterBody): Promise<void> {
   setAuth(d.token);
 }
 
-export async function login(nickname: string, password: string): Promise<void> {
+export async function login(username: string, password: string): Promise<void> {
   const d = await requestJSON("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nickname, password }),
+    body: JSON.stringify({ username, password }),
   });
   setAuth(d.token);
 }
@@ -302,6 +306,8 @@ export async function deleteRecord(
 
 export interface UserProfile {
   id: number;
+  /** 登录标识,只读展示 */
+  username: string;
   nickname: string;
   heightCm: number;
   sex: "male" | "female";
@@ -312,6 +318,7 @@ export async function fetchUser(): Promise<UserProfile> {
   const d = await requestJSON("/api/users/me");
   return {
     id: d.id,
+    username: d.username,
     nickname: d.nickname,
     heightCm: d.height_cm,
     sex: d.sex,

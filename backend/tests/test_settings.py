@@ -9,8 +9,19 @@ from app import api
 from app.models import AiMemory, User, UserFood
 
 
+_seq = 0
+
+
 async def _user(nick="档案测试"):
-    return await User.create(nickname=nick, height_cm=178, sex="male", birth_year=1997)
+    global _seq
+    _seq += 1
+    return await User.create(
+        username=f"user_{_seq}",
+        nickname=nick,
+        height_cm=178,
+        sex="male",
+        birth_year=1997,
+    )
 
 
 async def test_读档案_返回全部档案字段含只读ID(db):
@@ -18,6 +29,7 @@ async def test_读档案_返回全部档案字段含只读ID(db):
     out = await api.get_user(user)
     assert out == {
         "id": user.id,
+        "username": user.username,
         "nickname": "档案测试",
         "height_cm": 178,
         "sex": "male",
@@ -54,12 +66,11 @@ async def test_改档案_可同时改多个字段(db):
     assert out["birth_year"] == 2000
 
 
-async def test_改昵称_与他人重名报409(db):
+async def test_改昵称_允许与他人重名(db):
     await _user(nick="占位者")
     user = await _user(nick="本人")
-    with pytest.raises(HTTPException) as e:
-        await api.patch_user(api.UserPatch(nickname="占位者"), user)
-    assert e.value.status_code == 409
+    out = await api.patch_user(api.UserPatch(nickname="占位者"), user)
+    assert out["nickname"] == "占位者"  # 昵称纯显示,可重名(2026-07-12 拆分)
 
 
 async def test_改档案_空请求体报422(db):

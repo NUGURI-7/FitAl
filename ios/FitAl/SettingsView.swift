@@ -59,6 +59,7 @@ struct SettingsView: View {
                 sectionHeader("身体档案")
 
                 VStack(spacing: 8) {
+                    readOnlyRow(label: "用户名", value: profile.username ?? "—")
                     textRow(label: "昵称", text: $nickname, keyboard: .default)
                     textRow(label: "身高", text: $height, keyboard: .decimalPad, unit: "cm")
                     sexRow
@@ -66,7 +67,7 @@ struct SettingsView: View {
                     readOnlyRow(label: "用户 ID", value: "\(profile.id)")
                 }
 
-                Text("身高、性别、出生年份用于基础代谢与消耗计算;改档案不影响已存的记录,汇总里现算的数字会自动按新档案计。")
+                Text("用户名是登录标识,不可改;昵称随便改、可重名。身高、性别、出生年份用于基础代谢与消耗计算;改档案不影响已存的记录,汇总里现算的数字会自动按新档案计。")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textSecondary.opacity(0.85))
                     .padding(.horizontal, 4)
@@ -535,6 +536,7 @@ struct SettingsView: View {
                 try await API.patchUser(body)
                 baseline = UserProfile(
                     id: baseline.id,
+                    username: baseline.username,
                     nickname: trimmedNick,
                     heightCm: Double(height) ?? baseline.heightCm,
                     sex: sex,
@@ -587,7 +589,7 @@ struct SettingsView: View {
 #Preview {
     NavigationStack {
         SettingsView(
-            profile: UserProfile(id: 1, nickname: "演示", heightCm: 175, sex: "male", birthYear: 1997),
+            profile: UserProfile(id: 1, username: "demo", nickname: "演示", heightCm: 175, sex: "male", birthYear: 1997),
             onSaved: {},
             onLogout: {}
         )

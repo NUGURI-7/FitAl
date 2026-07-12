@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// 登录页:本地无令牌/被踢下线时的全屏门面(契约 2026-07-12)。
-/// 登录=昵称+密码;注册=邀请码+昵称+密码+身体档案(注册页一并填);
+/// 登录=用户名+密码;注册=邀请码+用户名+昵称(选填)+密码+身体档案;
+/// 用户名=登录标识(字母数字下划线3-20位,注册后不可改),昵称=纯显示可重名;
 /// 注册成功当场发令牌,免二次登录。
 /// 三层世界:纸感底+白卡片输入行,提交键=品牌绿液态玻璃。
 struct LoginView: View {
@@ -9,6 +10,7 @@ struct LoginView: View {
     var onAuthed: () -> Void
 
     @State private var isRegister = false
+    @State private var username = ""
     @State private var nickname = ""
     @State private var password = ""
     @State private var inviteCode = ""
@@ -36,7 +38,15 @@ struct LoginView: View {
                     hintText("一码注册一人,用过即作废;问管理员要")
                 }
 
-                textRow(label: "昵称", text: $nickname, keyboard: .default)
+                textRow(label: "用户名", text: $username, keyboard: .asciiCapable)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                if isRegister && !username.isEmpty && !usernameValid {
+                    Text("用户名只能是字母/数字/下划线,3-20 位,注册后不可改")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.burn)
+                        .padding(.horizontal, 4)
+                }
                 secureRow
 
                 if isRegister {
@@ -46,6 +56,8 @@ struct LoginView: View {
                             .foregroundStyle(Theme.burn)
                             .padding(.horizontal, 4)
                     }
+                    textRow(label: "昵称", text: $nickname, keyboard: .default)
+                    hintText("选填,给别人看的,留空用用户名;可重名可随时改")
                     sectionHeader("身体档案")
                         .padding(.top, 8)
                     textRow(label: "身高", text: $height, keyboard: .decimalPad, unit: "cm")
@@ -255,11 +267,17 @@ struct LoginView: View {
 
     // MARK: - 校验与提交
 
+    private var trimmedName: String { username.trimmingCharacters(in: .whitespaces) }
     private var trimmedNick: String { nickname.trimmingCharacters(in: .whitespaces) }
 
+    private var usernameValid: Bool {
+        trimmedName.wholeMatch(of: /[A-Za-z0-9_]{3,20}/) != nil
+    }
+
     private var valid: Bool {
-        guard !trimmedNick.isEmpty, trimmedNick.count <= 50, password.count >= 6 else { return false }
+        guard !trimmedName.isEmpty, password.count >= 6 else { return false }
         guard isRegister else { return true }
+        guard usernameValid, trimmedNick.count <= 50 else { return false }
         guard !inviteCode.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
         guard let h = Double(height), h > 0 else { return false }
         let thisYear = Calendar.current.component(.year, from: Date())
@@ -296,14 +314,15 @@ struct LoginView: View {
                 if isRegister {
                     try await API.register(
                         inviteCode: inviteCode.trimmingCharacters(in: .whitespaces),
-                        nickname: trimmedNick,
+                        username: trimmedName,
+                        nickname: trimmedNick.isEmpty ? nil : trimmedNick,
                         password: password,
                         heightCm: Double(height) ?? 0,
                         sex: sex,
                         birthYear: Int(birthYear) ?? 0
                     )
                 } else {
-                    try await API.login(nickname: trimmedNick, password: password)
+                    try await API.login(username: trimmedName, password: password)
                 }
                 authCount += 1
                 onAuthed()

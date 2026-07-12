@@ -50,10 +50,14 @@ function Field({
 }
 
 /** 登录页:本地无令牌/被踢下线时的全屏门面。
- * 登录=昵称+密码;注册=邀请码+昵称+密码+身体档案(注册页一并填,2026-07-12 用户定);
+ * 登录=用户名+密码;注册=邀请码+用户名+昵称(选填)+密码+身体档案(注册页一并填);
+ * 用户名=登录标识(字母数字下划线3-20位,注册后不可改),昵称=纯显示可重名(2026-07-12 拆分);
  * 注册成功当场发令牌,免二次登录 */
+const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/;
+
 export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
+  const [username, setUsername] = useState("");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -64,12 +68,15 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   const isRegister = mode === "register";
+  const uname = username.trim();
   const nick = nickname.trim();
   const hNum = Number(height);
   const yNum = Number(birthYear);
-  const baseValid = nick.length > 0 && nick.length <= 50 && password.length >= 6;
+  const baseValid = uname.length > 0 && password.length >= 6;
   const valid = isRegister
-    ? baseValid &&
+    ? USERNAME_RE.test(uname) &&
+      nick.length <= 50 &&
+      password.length >= 6 &&
       inviteCode.trim().length > 0 &&
       height.trim() !== "" &&
       Number.isFinite(hNum) &&
@@ -88,6 +95,7 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
       if (isRegister) {
         await register({
           inviteCode: inviteCode.trim(),
+          username: uname,
           nickname: nick,
           password,
           heightCm: hNum,
@@ -95,7 +103,7 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
           birthYear: yNum,
         });
       } else {
-        await login(nick, password);
+        await login(uname, password);
       }
       onAuthed();
     } catch (e) {
@@ -175,12 +183,18 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
           )}
 
           <Field
-            label="昵称"
-            value={nickname}
-            onChange={setNickname}
+            label="用户名"
+            value={username}
+            onChange={setUsername}
+            placeholder={isRegister ? "字母数字下划线 3-20 位" : undefined}
             autoComplete="username"
             delay={80}
           />
+          {isRegister && username.length > 0 && !USERNAME_RE.test(username.trim()) && (
+            <p className="px-1 text-[11px] text-burn">
+              用户名只能是字母/数字/下划线,3-20 位,注册后不可改
+            </p>
+          )}
           <Field
             label="密码"
             value={password}
@@ -195,6 +209,14 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
 
           {isRegister && (
             <>
+              <Field
+                label="昵称"
+                value={nickname}
+                onChange={setNickname}
+                placeholder="选填,给别人看的,留空用用户名"
+                autoComplete="nickname"
+                delay={0}
+              />
               <p className="px-1 pt-3 pb-1 text-[12px] font-semibold text-ink-soft">
                 身体档案
                 <span className="ml-1.5 font-normal text-ink-soft/70">
