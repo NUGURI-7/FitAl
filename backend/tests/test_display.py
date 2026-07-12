@@ -3,7 +3,6 @@
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from fastapi import HTTPException
 from tortoise import timezone
 
 from app import api
@@ -42,7 +41,7 @@ async def _weight_at(user, weight_kg, created_at):
 
 async def test_空的一天_摄入消耗为零_体重为空_列表为空(db):
     user = await _user()
-    out = await api.day_summary(DAY, user_id=user.id)
+    out = await api.day_summary(DAY, user=user)
     assert out["intake_kcal"] == 0
     assert out["burn_kcal"] == 0
     assert out["weight"] is None
@@ -63,7 +62,7 @@ async def test_日汇总_摄入消耗读聚合层合计_并挂明细(db):
         grams=100,
         meal=meal1,
     )
-    out = await api.day_summary(DAY, user_id=user.id)
+    out = await api.day_summary(DAY, user=user)
     # 摄入=各顿合计之和(500+300),不是明细求和(118)——证明读的是聚合层
     assert out["intake_kcal"] == 800.0
     assert out["burn_kcal"] == 200.0
@@ -74,7 +73,7 @@ async def test_隔天的组不串入_归属按开始时间(db):
     user = await _user()
     await _meal(user, _utc(3, 2), 400)  # 本地 7/3 10:00
     await _meal(user, _utc(3, 17), 999)  # UTC 7/3 17:00 = 本地 7/4 01:00,属次日
-    out = await api.day_summary(DAY, user_id=user.id)
+    out = await api.day_summary(DAY, user=user)
     assert out["intake_kcal"] == 400.0
     assert len(out["meals"]) == 1
 
@@ -83,8 +82,8 @@ async def test_当天体重取最新一条_没称的日子为空(db):
     user = await _user()
     await _weight_at(user, 71.0, _utc(3, 1))  # 本地 09:00
     await _weight_at(user, 70.5, _utc(3, 8))  # 本地 16:00,更晚
-    assert (await api.day_summary(DAY, user_id=user.id))["weight"] == 70.5
-    assert (await api.day_summary(date(2026, 7, 4), user_id=user.id))["weight"] is None
+    assert (await api.day_summary(DAY, user=user))["weight"] == 70.5
+    assert (await api.day_summary(date(2026, 7, 4), user=user))["weight"] is None
 
 
 async def test_体重曲线_只含窗口内记录_从早到晚(db):
@@ -93,7 +92,7 @@ async def test_体重曲线_只含窗口内记录_从早到晚(db):
     await _weight_at(user, 75.0, now - timedelta(days=40))  # 默认30天窗口外
     await _weight_at(user, 71.0, now - timedelta(days=2))
     await _weight_at(user, 72.0, now - timedelta(days=10))
-    out = await api.weight_curve(user_id=user.id)
+    out = await api.weight_curve(user=user)
     assert [w["weight_kg"] for w in out["weights"]] == [72.0, 71.0]
 
 
@@ -124,7 +123,7 @@ async def test_日汇总_返回全天基础代谢与运动净耗合计(db):
     await e1.save()
     await e2.save()
 
-    out = await api.day_summary(DAY, user_id=user.id)
+    out = await api.day_summary(DAY, user=user)
     # 70kg/178cm/男/1997 → Mifflin-St Jeor 全天 1672.5
     assert out["bmr_kcal"] == pytest.approx(1672.5, abs=0.1)
     assert out["burn_net_kcal"] == 130.0  # 80 + 50(净耗未知按总耗计)
@@ -132,18 +131,17 @@ async def test_日汇总_返回全天基础代谢与运动净耗合计(db):
 
 async def test_从未称重_基础代谢为空(db):
     user = await _user()
-    out = await api.day_summary(DAY, user_id=user.id)
+    out = await api.day_summary(DAY, user=user)
     assert out["bmr_kcal"] is None
     assert out["burn_net_kcal"] == 0
 
 
-async def test_用户不存在_两个接口均报404(db):
-    with pytest.raises(HTTPException) as e1:
-        await api.day_summary(DAY, user_id=999)
-    assert e1.value.status_code == 404
-    with pytest.raises(HTTPException) as e2:
-        await api.weight_curve(user_id=999)
-    assert e2.value.status_code == 404
+async def test_日汇总_只看自己的_不串别人数据(db):
+    user = await _user()
+    other = await _user(nick="别人")
+    await _meal(other, _utc(3, 0), 700)
+    out = await api.day_summary(DAY, user=user)
+    assert out["meals"] == [] and out["intake_kcal"] == 0
 
 
 async def test_日汇总_带菜标签的成分归拢成菜且合计现算(db):
@@ -164,7 +162,7 @@ async def test_日汇总_带菜标签的成分归拢成菜且合计现算(db):
             dish=dish,
             meal=meal,
         )
-    out = await api.day_summary(DAY, user_id=user.id)
+    out = await api.day_summary(DAY, user=user)
     [plain, dish] = out["meals"][0]["items"]
     assert plain["type"] == "food" and plain["food_name"] == "鸡胸脯肉"
     assert dish["type"] == "dish" and dish["dish_name"] == "毛毛虫面包"
@@ -186,5 +184,5 @@ async def test_日汇总_老数据无菜标签全部平铺为单品(db):
             grams=100,
             meal=meal,
         )
-    out = await api.day_summary(DAY, user_id=user.id)
+    out = await api.day_summary(DAY, user=user)
     assert [i["type"] for i in out["meals"][0]["items"]] == ["food", "food"]

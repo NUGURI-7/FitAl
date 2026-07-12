@@ -40,9 +40,7 @@ async def test_一次输入落一行且全部记录挂同一输入(db, monkeypat
         pipeline, "parse_via_triage", _fake_pipeline(result, {"triage": {"seg": 2}})
     )
 
-    resp = await api.chat(
-        api.ChatIn(user_id=user.id, text="吃了根黄瓜100克,今天70.5公斤")
-    )
+    resp = await api.chat(api.ChatIn(text="吃了根黄瓜100克,今天70.5公斤"), user)
     body = await _drain(resp)
 
     rows = await Input.all()
@@ -67,7 +65,7 @@ async def test_整句失败回人话且留底不炸500(db, monkeypatch):
 
     monkeypatch.setattr(pipeline, "parse_via_triage", boom)
 
-    resp = await api.chat(api.ChatIn(user_id=user.id, text="一句会炸的话"))
+    resp = await api.chat(api.ChatIn(text="一句会炸的话"), user)
     body = await _drain(resp)  # 不抛异常:错例④,回人话
 
     assert "没解析出来" in body
@@ -89,9 +87,7 @@ async def test_部分降级状态partial且回执明说没听懂(db, monkeypatch
     )
     monkeypatch.setattr(pipeline, "parse_via_triage", _fake_pipeline(result))
 
-    resp = await api.chat(
-        api.ChatIn(user_id=user.id, text="吃了根黄瓜100克,卧推60公斤10个")
-    )
+    resp = await api.chat(api.ChatIn(text="吃了根黄瓜100克,卧推60公斤10个"), user)
     body = await _drain(resp)
 
     assert "已记录" in body and "没听懂" in body and "卧推60公斤10个" in body
@@ -108,7 +104,7 @@ async def test_删输入行不动记录(db, monkeypatch):
         )
     )
     monkeypatch.setattr(pipeline, "parse_via_triage", _fake_pipeline(result))
-    resp = await api.chat(api.ChatIn(user_id=user.id, text="吃了根黄瓜100克"))
+    resp = await api.chat(api.ChatIn(text="吃了根黄瓜100克"), user)
     await _drain(resp)
 
     await (await Input.get(user=user)).delete()

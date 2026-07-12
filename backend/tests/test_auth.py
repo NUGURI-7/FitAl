@@ -110,3 +110,10 @@ async def test_退出登录_只删本枚令牌_其他设备不掉线(db):
 async def test_退出登录_令牌已不存在_幂等成功(db):
     out = await api.logout(authorization="Bearer 不存在的令牌")
     assert out == {"status": "ok"}
+
+
+async def test_认人_有效令牌_返回本人(db):
+    await InviteCode.create(code="CODE-1")
+    out = await api.register(_register_body())
+    user = await api.current_user(authorization=f"Bearer {out['token']}")
+    assert user.id == out["user_id"] and user.nickname == "新朋友"

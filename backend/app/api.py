@@ -7,7 +7,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import bcrypt
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from tortoise import Tortoise, timezone
@@ -130,17 +130,23 @@ async def logout(authorization: str = Header(default="")) -> dict:
     return {"status": "ok"}
 
 
+async def current_user(authorization: str = Header(default="")) -> User:
+    """全部业务接口认人(契约 2026-07-12 一刀切):
+    Bearer 令牌查表定人,无令牌/令牌无效一律 401,不再收 user_id 参数。"""
+    token = authorization.removeprefix("Bearer ").strip()
+    row = await AuthToken.get_or_none(token=token) if token else None
+    if row is None:
+        raise HTTPException(401, "未登录")
+    return await User.get(id=row.user_id)
+
+
 class ChatIn(BaseModel):
-    user_id: int
     text: str = Field(min_length=1)
 
 
 @router.post("/chat")
-async def chat(body: ChatIn) -> StreamingResponse:
+async def chat(body: ChatIn, user: User = Depends(current_user)) -> StreamingResponse:
     """唯一对话入口(契约①)。v1 仅 intent=record:洗数据→raw→聚合→new。"""
-    user = await User.get_or_none(id=body.user_id)
-    if user is None:
-        raise HTTPException(404, "用户不存在")
     latest_weight = await WeightRecord.filter(user=user).order_by("-created_at").first()
     if latest_weight is None:
         raise HTTPException(409, "该用户还没有体重记录,无法计算消耗")
@@ -492,9 +498,11 @@ async def _bmr_per_min(user_id: int) -> float:
 
 
 @router.patch("/records/food/{record_id}")
-async def patch_food(record_id: int, body: FoodPatch) -> dict:
+async def patch_food(
+    record_id: int, body: FoodPatch, user: User = Depends(current_user)
+) -> dict:
     """修正饮食记录:改克数 → 重算热量营养;直接改热量 → 采用用户数。"""
-    rec = await FoodRecord.get_or_none(id=record_id)
+    rec = await FoodRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     if body.grams is None and body.kcal is None:
@@ -548,10 +556,12 @@ async def patch_food(record_id: int, body: FoodPatch) -> dict:
 
 
 @router.patch("/records/exercise/{record_id}")
-async def patch_exercise(record_id: int, body: ExercisePatch) -> dict:
+async def patch_exercise(
+    record_id: int, body: ExercisePatch, user: User = Depends(current_user)
+) -> dict:
     """修正运动记录:改时长 → 按 MET 重算消耗;直接改热量 → 采用用户数;
     次数/负重是训练进度描述,改动照存不影响消耗。"""
-    rec = await ExerciseRecord.get_or_none(id=record_id)
+    rec = await ExerciseRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     if all(v is None for v in (body.duration_min, body.reps, body.load_kg, body.kcal)):
@@ -603,8 +613,8 @@ async def patch_exercise(record_id: int, body: ExercisePatch) -> dict:
 
 
 @router.delete("/records/food/{record_id}")
-async def delete_food(record_id: int) -> dict:
-    rec = await FoodRecord.get_or_none(id=record_id)
+async def delete_food(record_id: int, user: User = Depends(current_user)) -> dict:
+    rec = await FoodRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     await _learn_correction(
@@ -621,8 +631,8 @@ async def delete_food(record_id: int) -> dict:
 
 
 @router.delete("/records/exercise/{record_id}")
-async def delete_exercise(record_id: int) -> dict:
-    rec = await ExerciseRecord.get_or_none(id=record_id)
+async def delete_exercise(record_id: int, user: User = Depends(current_user)) -> dict:
+    rec = await ExerciseRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     await _learn_correction(
@@ -639,9 +649,11 @@ async def delete_exercise(record_id: int) -> dict:
 
 
 @router.patch("/records/weight/{record_id}")
-async def patch_weight(record_id: int, body: WeightPatch) -> dict:
+async def patch_weight(
+    record_id: int, body: WeightPatch, user: User = Depends(current_user)
+) -> dict:
     """修正体重记录:只改公斤数,时间戳不动;派生数字(基础代谢/曲线)读时现算,无需联动。"""
-    rec = await WeightRecord.get_or_none(id=record_id)
+    rec = await WeightRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     rec.weight_kg = body.weight_kg
@@ -650,8 +662,8 @@ async def patch_weight(record_id: int, body: WeightPatch) -> dict:
 
 
 @router.delete("/records/weight/{record_id}")
-async def delete_weight(record_id: int) -> dict:
-    rec = await WeightRecord.get_or_none(id=record_id)
+async def delete_weight(record_id: int, user: User = Depends(current_user)) -> dict:
+    rec = await WeightRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     await rec.delete()
@@ -711,7 +723,7 @@ def _meal_items(records: list[FoodRecord]) -> list[dict]:
 
 
 @router.get("/days/{day}")
-async def day_summary(day: date, user_id: int) -> dict:
+async def day_summary(day: date, user: User = Depends(current_user)) -> dict:
     """某天汇总:摄入/消耗直接读聚合层合计;当天没称重则体重为空,不沿用旧值。
 
     另给两个能量平衡用的数(前端算净摄入):
@@ -719,9 +731,7 @@ async def day_summary(day: date, user_id: int) -> dict:
     - burn_net_kcal:当天运动净耗合计(总耗含运动时段基础代谢,直接与全天基础代谢
       相加会重复扣,故用净耗;个别记录净耗未知时按总耗计)
     """
-    user = await User.get_or_none(id=user_id)
-    if user is None:
-        raise HTTPException(404, "用户不存在")
+    user_id = user.id
     start, end = _local_day_range_utc(day)
 
     meals = await Meal.filter(
@@ -804,12 +814,10 @@ async def day_summary(day: date, user_id: int) -> dict:
 
 
 @router.get("/weights")
-async def weight_curve(user_id: int, days: int = 30) -> dict:
+async def weight_curve(days: int = 30, user: User = Depends(current_user)) -> dict:
     """体重曲线:近 N 天全部记录,从早到晚。"""
-    if await User.get_or_none(id=user_id) is None:
-        raise HTTPException(404, "用户不存在")
     since = timezone.now() - timedelta(days=days)
-    rows = await WeightRecord.filter(user_id=user_id, created_at__gte=since).order_by(
+    rows = await WeightRecord.filter(user_id=user.id, created_at__gte=since).order_by(
         "created_at"
     )
     return {
@@ -845,21 +853,15 @@ def _user_out(user: User) -> dict:
     }
 
 
-@router.get("/users/{user_id}")
-async def get_user(user_id: int) -> dict:
-    user = await User.get_or_none(id=user_id)
-    if user is None:
-        raise HTTPException(404, "用户不存在")
+@router.get("/users/me")
+async def get_user(user: User = Depends(current_user)) -> dict:
     return _user_out(user)
 
 
-@router.patch("/users/{user_id}")
-async def patch_user(user_id: int, body: UserPatch) -> dict:
+@router.patch("/users/me")
+async def patch_user(body: UserPatch, user: User = Depends(current_user)) -> dict:
     """改身体档案:只发改动的字段;不回算任何已存记录,
     读时现算的数字(基础代谢/净摄入)自然采用新档案。"""
-    user = await User.get_or_none(id=user_id)
-    if user is None:
-        raise HTTPException(404, "用户不存在")
     changes = body.model_dump(exclude_none=True)
     if not changes:
         raise HTTPException(422, "至少提供一个要修改的字段")
@@ -877,10 +879,8 @@ async def patch_user(user_id: int, body: UserPatch) -> dict:
 
 
 @router.get("/user-foods")
-async def list_user_foods(user_id: int) -> dict:
-    if await User.get_or_none(id=user_id) is None:
-        raise HTTPException(404, "用户不存在")
-    rows = await UserFood.filter(user_id=user_id).order_by("-updated_at")
+async def list_user_foods(user: User = Depends(current_user)) -> dict:
+    rows = await UserFood.filter(user_id=user.id).order_by("-updated_at")
     return {
         "foods": [
             {
@@ -900,9 +900,9 @@ async def list_user_foods(user_id: int) -> dict:
 
 
 @router.delete("/user-foods/{food_id}")
-async def delete_user_food(food_id: int) -> dict:
+async def delete_user_food(food_id: int, user: User = Depends(current_user)) -> dict:
     """删自定义食物:只影响以后的查表,已入库的记录数字不动。"""
-    rec = await UserFood.get_or_none(id=food_id)
+    rec = await UserFood.get_or_none(id=food_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     await rec.delete()
@@ -914,10 +914,8 @@ async def delete_user_food(food_id: int) -> dict:
 
 
 @router.get("/memories")
-async def list_memories(user_id: int) -> dict:
-    if await User.get_or_none(id=user_id) is None:
-        raise HTTPException(404, "用户不存在")
-    rows = await AiMemory.filter(user_id=user_id).order_by("-updated_at")
+async def list_memories(user: User = Depends(current_user)) -> dict:
+    rows = await AiMemory.filter(user_id=user.id).order_by("-updated_at")
     return {
         "memories": [
             {
@@ -932,8 +930,8 @@ async def list_memories(user_id: int) -> dict:
 
 
 @router.delete("/memories/{memory_id}")
-async def delete_memory(memory_id: int) -> dict:
-    rec = await AiMemory.get_or_none(id=memory_id)
+async def delete_memory(memory_id: int, user: User = Depends(current_user)) -> dict:
+    rec = await AiMemory.get_or_none(id=memory_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
     await rec.delete()

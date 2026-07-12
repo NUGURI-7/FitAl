@@ -12,19 +12,15 @@ import type {
 // 任一业务请求 401(令牌被删/失效)即清本地令牌、整界面踢回登录页 ──────────
 
 const TOKEN_KEY = "fital_token";
-const USER_KEY = "fital_user_id";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
-const getUserId = () => Number(localStorage.getItem(USER_KEY));
 
-function setAuth(token: string, userId: number) {
+function setAuth(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, String(userId));
 }
 
 function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
 }
 
 /** 守卫回调:App 挂载时注册,401 时被调,切回登录页 */
@@ -35,7 +31,8 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 
 function authHeaders(): Record<string, string> {
   const t = getToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
+  // 令牌只可能是 URL-safe ASCII;存储被改坏时当没登录处理,免得 fetch 在浏览器侧就炸
+  return t && /^[!-~]+$/.test(t) ? { Authorization: `Bearer ${t}` } : {};
 }
 
 /** 登录/注册自身的 401/403 是业务错误(密码不对/码无效),不触发踢回守卫 */
@@ -144,7 +141,7 @@ export async function register(b: RegisterBody): Promise<void> {
       birth_year: b.birthYear,
     }),
   });
-  setAuth(d.token, d.user_id);
+  setAuth(d.token);
 }
 
 export async function login(nickname: string, password: string): Promise<void> {
@@ -153,7 +150,7 @@ export async function login(nickname: string, password: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nickname, password }),
   });
-  setAuth(d.token, d.user_id);
+  setAuth(d.token);
 }
 
 /** 退出登录:服务器删本枚令牌(幂等);无论成败本地登录态都清 */
@@ -268,7 +265,7 @@ function toGroup(
 // ── 接口调用 ─────────────────────────────────────────────────────────────
 
 export async function fetchDay(dateISO: string): Promise<DaySummary> {
-  const d: ApiDay = await requestJSON(`/api/days/${dateISO}?user_id=${getUserId()}`);
+  const d: ApiDay = await requestJSON(`/api/days/${dateISO}`);
   return {
     intakeKcal: d.intake_kcal,
     burnKcal: d.burn_kcal,
@@ -312,7 +309,7 @@ export interface UserProfile {
 }
 
 export async function fetchUser(): Promise<UserProfile> {
-  const d = await requestJSON(`/api/users/${getUserId()}`);
+  const d = await requestJSON("/api/users/me");
   return {
     id: d.id,
     nickname: d.nickname,
@@ -326,7 +323,7 @@ export async function fetchUser(): Promise<UserProfile> {
 export async function patchUser(
   body: Record<string, string | number>,
 ): Promise<void> {
-  await requestJSON(`/api/users/${getUserId()}`, {
+  await requestJSON("/api/users/me", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -343,7 +340,7 @@ export interface UserFoodItem {
 }
 
 export async function fetchUserFoods(): Promise<UserFoodItem[]> {
-  const d = await requestJSON(`/api/user-foods?user_id=${getUserId()}`);
+  const d = await requestJSON("/api/user-foods");
   return (
     d.foods as {
       id: number;
@@ -373,7 +370,7 @@ export interface MemoryItem {
 }
 
 export async function fetchMemories(): Promise<MemoryItem[]> {
-  const d = await requestJSON(`/api/memories?user_id=${getUserId()}`);
+  const d = await requestJSON("/api/memories");
   return (
     d.memories as {
       id: number;
@@ -400,7 +397,7 @@ export interface WeightPoint {
 }
 
 export async function fetchWeights(days = 30): Promise<WeightPoint[]> {
-  const d = await requestJSON(`/api/weights?user_id=${getUserId()}&days=${days}`);
+  const d = await requestJSON(`/api/weights?days=${days}`);
   return (
     d.weights as { id: number; weight_kg: number; created_at: string }[]
   ).map((w) => ({ id: w.id, at: new Date(w.created_at), kg: w.weight_kg }));
@@ -422,7 +419,7 @@ export async function sendChat(
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ user_id: getUserId(), text }),
+    body: JSON.stringify({ text }),
   });
   if (res.status === 401) {
     clearAuth();
