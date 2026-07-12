@@ -114,8 +114,9 @@ class ParsedDish(BaseModel):
     )
     est_total_kcal: float | None = Field(
         None,
-        description="整道菜总热量的兜底估算(仅在无法按成分查表时使用,平时不用);"
-        "漏填由代码从成分求和补出,不作硬校验",
+        description="整道菜总热量的常识估算,必须填:代码拿它与成分查表合计对账,"
+        "揪出拆解口径错配(如熟食克重挂在干货条目上);它不参与正常计算,"
+        "查表可用时仍以查表为准",
     )
     meal_slot: MealSlot | None = Field(
         None,

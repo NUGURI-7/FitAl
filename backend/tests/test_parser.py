@@ -269,6 +269,54 @@ def test_克重守恒_普通单品与合规菜零违规():
     assert parser.conservation_violations(output) == []
 
 
+# ── 整菜对账哨兵(2026-07-12 鸡蛋肠粉错例:湿粉皮190g按干米粉计出663千卡) ──
+
+
+def _changfen(est_total=330.0):
+    """真实错例复刻:一份鸡蛋肠粉250g,拆成米粉190+鸡蛋50+菜籽油10。
+
+    米粉在表里是干货口径349千卡/100g,查表合计约825千卡,
+    而整菜正常估算约330千卡——差2.5倍,哨兵必须拦住。
+    """
+    return ParsedDish(
+        dish_name="鸡蛋肠粉",
+        total_grams=250,
+        ingredients=[
+            ParsedIngredient(spoken_name="肠粉皮", name="米粉", grams=190),
+            ParsedIngredient(spoken_name="鸡蛋", name="鸡蛋(代表值)", grams=50),
+            ParsedIngredient(spoken_name="油", name="菜籽油", grams=10),
+        ],
+        est_total_kcal=est_total,
+    )
+
+
+def test_对账哨兵_查表合计与整菜估算差翻倍级被判违规且话术带两个数():
+    v = parser.dish_estimate_violation(_changfen())
+    assert v is not None
+    assert "鸡蛋肠粉" in v and "330" in v
+
+
+def test_对账哨兵_差距在两倍以内放行_正常菜不误伤():
+    assert parser.dish_estimate_violation(_dish()) is None  # 毛毛虫面包 544/420≈1.3
+    # 同一份肠粉,若模型整菜估算本来就给到接近查表值,不算口径错配
+    assert parser.dish_estimate_violation(_changfen(est_total=450)) is None
+
+
+def test_对账哨兵_模型没给整菜估算则不对账_不烧重试():
+    dish = _changfen()
+    dish.est_total_kcal = None
+    assert parser.dish_estimate_violation(dish) is None
+
+
+def test_对账哨兵_重试不过整菜降级为估算一条_数值取整菜估算而非查表合计():
+    degraded = parser.degrade_dish(_changfen())
+    [r] = _build([degraded])
+    assert r.source == "llm_estimated"
+    assert r.kcal == 330  # 用模型的整菜估算,绝不用823那个口径错配的合计
+    assert r.food_name == "鸡蛋肠粉"
+    assert r.grams == 250
+
+
 def test_候选搜索_代表值后缀不淹没主名召回():
     # 模型给"辣椒(代表值)"但表里无此条,应剥主名"辣椒"召回辣椒品种,
     # 不被别的"XX(代表值)"淹没(修复:辣椒曾因此走 llm_estimated)

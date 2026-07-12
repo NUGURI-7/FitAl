@@ -376,22 +376,65 @@ def conservation_violations(output: ParseOutput) -> list[str]:
     ]
 
 
-def degrade_dish(dish: ParsedDish) -> ParsedFood:
-    """守恒重试不过 → 整菜降级为估算一条(走 est 路径,必标 llm_estimated)。
+def dish_table_kcal(dish: ParsedDish) -> float | None:
+    """按成分查表合计整菜热量:表内每100克×克数,表外用成分估算,查不到的跳过。"""
+    parts = []
+    for ing in dish.ingredients:
+        item = lookup.find_food(_form_resolved_name(ing.name, ing.form))
+        if item is not None:
+            parts.append(item.kcal * ing.grams / 100)
+        elif ing.est_kcal is not None:
+            parts.append(ing.est_kcal)
+    return round(sum(parts), 1) if parts else None
 
-    整菜估算值模型没给时,代码从成分自己求和(表内按每100克算,表外用成分估算;
-    算术归代码)——该字段因此无需硬校验,漏填不烧重试。
+
+# 对账哨兵阈值:查表合计高于整菜估算2倍或低于一半=拆解口径出错(翻倍级才拦,
+# 估算本身有噪声,阈值收紧会误伤正常菜);两数都小时差比无意义,不对账
+ESTIMATE_RATIO_HIGH = 2.0
+ESTIMATE_RATIO_LOW = 0.5
+ESTIMATE_MIN_KCAL = 100.0
+
+
+def dish_estimate_violation(item: ParsedDish) -> str | None:
+    """整菜对账哨兵(2026-07-12 鸡蛋肠粉错例):成分查表合计 vs 模型整菜估算。
+
+    模型拆成分时看不到表条目的干湿口径,含水熟食的克重挂到干货条目上时
+    (肠粉皮190g按干米粉349千卡/100g计出663),查表合计会比模型自己的整菜
+    估算高出翻倍级——这个口径错配代码查表能算、模型自由估算也能估,唯独
+    两边不对账就没人发现。超差打回重拆,重试不过整菜降级为估算一条。
+    """
+    est = item.est_total_kcal
+    table = dish_table_kcal(item)
+    if est is None or est <= 0 or table is None:
+        return None
+    if max(est, table) < ESTIMATE_MIN_KCAL:
+        return None
+    if ESTIMATE_RATIO_LOW * est <= table <= ESTIMATE_RATIO_HIGH * est:
+        return None
+    return (
+        f"{item.dish_name}: 成分按成分表算出约{table:g}千卡,与整菜估算"
+        f"{est:g}千卡差距过大;疑似把熟食成品的克重套在了干货/生料条目上"
+        f"(或反之),请改用贴近成品口径的成分映射并相应调整克重"
+    )
+
+
+def estimate_violations(output: ParseOutput) -> list[str]:
+    return [
+        v
+        for item in output.items
+        if isinstance(item, ParsedDish) and (v := dish_estimate_violation(item))
+    ]
+
+
+def degrade_dish(dish: ParsedDish) -> ParsedFood:
+    """守恒/对账重试不过 → 整菜降级为估算一条(走 est 路径,必标 llm_estimated)。
+
+    整菜估算值模型没给时,代码从成分查表求和兜底(算术归代码)——该字段
+    因此无需硬校验,漏填不烧重试。
     """
     est = dish.est_total_kcal
     if est is None:
-        parts = []
-        for ing in dish.ingredients:
-            item = lookup.find_food(_form_resolved_name(ing.name, ing.form))
-            if item is not None:
-                parts.append(item.kcal * ing.grams / 100)
-            elif ing.est_kcal is not None:
-                parts.append(ing.est_kcal)
-        est = round(sum(parts), 1) if parts else None
+        est = dish_table_kcal(dish)
     return ParsedFood(
         spoken_name=dish.dish_name,
         name=dish.dish_name,
@@ -443,7 +486,8 @@ def _instructions() -> str:
     总克重——成分(馅、夹心、配料)是总量的组成部分,绝不能在总克重之外额外叠加;
     规则6的补油补调味对 dish 同样生效:做法需要而用户没提的油/高热量调味,
     作为成分列入 ingredients(占总克重的份额),不得漏;
-    est_total_kcal 必填。单独报的一种食物用 food,不用 dish。
+    est_total_kcal 必填:整道菜总热量的常识估算,代码拿它与查表结果对账。
+    单独报的一种食物用 food,不用 dish。
 11. 补充说明不是新记录,同一对象整句只输出一条:
     动作:"硬拉100公斤5个又一组" → 仅一条(name=硬拉, load_kg=100, reps=5);
     食物:同一句里对刚提过的食物追加做法/状态/品牌描述("100克虾仁,水煮的虾仁"
@@ -497,13 +541,14 @@ def parse_agent() -> Agent:
 
     @agent.output_validator
     async def _validate(ctx: RunContext[frozenset], output: ParseOutput) -> ParseOutput:
-        violations = conservation_violations(output)
+        violations = conservation_violations(output) + estimate_violations(output)
         if violations and ctx.retry < MAX_PARSE_RETRIES:
-            raise ModelRetry("以下菜的克重不守恒,请重拆:" + ";".join(violations))
+            raise ModelRetry("以下菜的拆解不合格,请重拆:" + ";".join(violations))
         if violations:  # 重试用尽仍超差 → 违规的菜整体降级为估算一条
             output.items = [
                 degrade_dish(i)
-                if isinstance(i, ParsedDish) and dish_violation(i)
+                if isinstance(i, ParsedDish)
+                and (dish_violation(i) or dish_estimate_violation(i))
                 else i
                 for i in output.items
             ]

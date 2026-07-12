@@ -194,7 +194,8 @@ def _eat_instructions() -> str:
    总克重——成分(馅、夹心、配料)是总量的组成部分,绝不能在总克重之外额外叠加;
    规则5的补油补调味对 dish 同样生效:做法需要而用户没提的油/高热量调味,
    作为成分列入 ingredients(占总克重的份额),不得漏;
-   est_total_kcal 必填。单独报的一种食物用 food,不用 dish。
+   est_total_kcal 必填:整道菜总热量的常识估算,代码拿它与查表结果对账。
+   单独报的一种食物用 food,不用 dish。
 7. 餐次归属:仅当用户明说了这是哪一顿——早餐/早饭→早餐,午餐/午饭/中饭→午餐,
    下午茶/下午加餐→下午茶,晚餐/晚饭→晚餐,夜宵/宵夜→其余——才填 meal_slot;
    没明说必须不填(留空),系统会按时间自动归,绝不要猜。
@@ -251,13 +252,16 @@ def _specialist(instructions: str) -> Agent:
 
     @agent.output_validator
     async def _validate(ctx: RunContext[frozenset], output: ParseOutput) -> ParseOutput:
-        violations = parser.conservation_violations(output)
+        violations = parser.conservation_violations(
+            output
+        ) + parser.estimate_violations(output)
         if violations and ctx.retry < parser.MAX_PARSE_RETRIES:
-            raise ModelRetry("以下菜的克重不守恒,请重拆:" + ";".join(violations))
+            raise ModelRetry("以下菜的拆解不合格,请重拆:" + ";".join(violations))
         if violations:  # 重试用尽仍超差 → 违规的菜整体降级为估算一条
             output.items = [
                 parser.degrade_dish(i)
-                if isinstance(i, ParsedDish) and parser.dish_violation(i)
+                if isinstance(i, ParsedDish)
+                and (parser.dish_violation(i) or parser.dish_estimate_violation(i))
                 else i
                 for i in output.items
             ]
