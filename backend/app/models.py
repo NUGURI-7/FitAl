@@ -5,6 +5,8 @@ from tortoise.models import Model
 class User(Model):
     id = fields.IntField(primary_key=True)
     nickname = fields.CharField(max_length=50, unique=True)
+    # bcrypt 哈希;可空过渡——登录实施前的存量用户无密码,切换时脚本补
+    password_hash = fields.CharField(max_length=128, null=True)
     # 身体档案:修正 MET 公式(Mifflin-St Jeor)用,一次性填;体重走 weight_records
     height_cm = fields.FloatField()
     sex = fields.CharField(max_length=8)  # male | female
@@ -13,6 +15,41 @@ class User(Model):
 
     class Meta:
         table = "users"
+
+
+class InviteCode(Model):
+    """邀请码:管理员脚本直插生成,一人一码,注册消耗即作废(used_at 非空=已用)。"""
+
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=32, unique=True)
+    used_by = fields.ForeignKeyField(
+        "models.User",
+        related_name="invite_codes",
+        null=True,
+        on_delete=fields.SET_NULL,
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+    used_at = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "invite_codes"
+
+
+class AuthToken(Model):
+    """登录令牌:纯随机不透明串,认人靠查表;长期有效,删行即失效。
+
+    一用户多令牌(多设备并存);行数=登录次数,非请求次数。
+    """
+
+    id = fields.IntField(primary_key=True)
+    token = fields.CharField(max_length=64, unique=True)
+    user = fields.ForeignKeyField(
+        "models.User", related_name="auth_tokens", on_delete=fields.CASCADE
+    )
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "auth_tokens"
 
 
 class WeightRecord(Model):

@@ -9,6 +9,7 @@ dependencies = [
     "tortoise-orm[asyncpg]>=1.1.7",
     "pydantic-settings>=2.6.0",
     "pydantic-ai-slim[openai]>=2.4.0",
+    "bcrypt>=5.0.0",
 ]
 
 [dependency-groups]

@@ -138,13 +138,15 @@ DELETE /memories/{id}                  # 删记忆:即停止注入解析 prompt
 GET /users 列表  /  POST /users        # 暂缓(2026-07-06 用户定):单人使用期不实现,
                                        # 前端固定用户;真有多用户再做。昵称已有全局唯一约束
 
-POST /auth/register                    # 注册(2026-07-12 契约定稿,未实施)
-  { "invite_code", "nickname", "password" }
-  验码存在且未用 → 昵称未占(409)→ 建用户(bcrypt)→ 码作废 → 当场发令牌
+POST /auth/register                    # 注册(2026-07-12 契约定稿;后端已实现)
+  { "invite_code", "nickname", "password",
+    "height_cm", "sex", "birth_year" }  # 身体档案注册页一并填(2026-07-12 用户定:
+                                        # 档案列保持必填,计算代码零改动)
+  验码存在且未用(403)→ 昵称未占(409)→ 建用户(bcrypt)→ 码作废 → 当场发令牌
   → { "token", "user_id" }
 POST /auth/login                       # 登录:{ "nickname", "password" } → { "token", "user_id" }
                                        # 失败统一 401"昵称或密码不对",不区分哪个错
-POST /auth/logout                      # 退出:带令牌调用,删本枚令牌(只下线本设备)
+POST /auth/logout                      # 退出:带令牌调用,删本枚令牌(只下线本设备,幂等)
 ```
 
 用户体重/身体档案由后端按 user_id 读取后注入 prompt,前端不传。

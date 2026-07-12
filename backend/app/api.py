@@ -1,11 +1,13 @@
 import asyncio
 import json
 import logging
+import secrets
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException
+import bcrypt
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from tortoise import Tortoise, timezone
@@ -16,9 +18,11 @@ from app.ai.schema import ParsedMemory, ParsedUserFoodDef
 from app.config import settings
 from app.models import (
     AiMemory,
+    AuthToken,
     ExerciseRecord,
     FoodRecord,
     Input,
+    InviteCode,
     Meal,
     Session,
     User,
@@ -44,6 +48,85 @@ async def health() -> dict:
     # 校验 DB 连通,连不上直接 500
     conn = Tortoise.get_connection("default")
     await conn.execute_query("SELECT 1")
+    return {"status": "ok"}
+
+
+# ── 登录/注册(契约 2026-07-12):令牌存库,认人靠查表,不用 JWT ─────────────
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def _verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
+
+
+async def _issue_token(user: User) -> str:
+    # 纯随机不透明串,不含任何信息,不由用户 ID 推导(可推导=可伪造);
+    # 一用户多令牌(多设备并存),行数=登录次数
+    token = secrets.token_urlsafe(32)
+    await AuthToken.create(token=token, user=user)
+    return token
+
+
+class RegisterIn(BaseModel):
+    invite_code: str = Field(min_length=1)
+    nickname: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=6)
+    # 身体档案注册页一并填(2026-07-12 用户定):档案列保持必填,计算代码零改动
+    height_cm: float = Field(gt=0)
+    sex: Literal["male", "female"]
+    birth_year: int
+
+
+class LoginIn(BaseModel):
+    nickname: str
+    password: str
+
+
+@router.post("/auth/register")
+async def register(body: RegisterIn) -> dict:
+    """验码未用 → 昵称未占 → 建用户 → 码作废 → 当场发令牌(免二次登录)。"""
+    code = await InviteCode.get_or_none(code=body.invite_code.strip())
+    if code is None or code.used_at is not None:
+        raise HTTPException(403, "邀请码无效或已被使用")
+    try:
+        user = await User.create(
+            nickname=body.nickname.strip(),
+            password_hash=_hash_password(body.password),
+            height_cm=body.height_cm,
+            sex=body.sex,
+            birth_year=body.birth_year,
+        )
+    except IntegrityError:
+        raise HTTPException(409, "昵称已被占用") from None
+    code.used_by = user
+    code.used_at = timezone.now()
+    await code.save()
+    return {"token": await _issue_token(user), "user_id": user.id}
+
+
+@router.post("/auth/login")
+async def login(body: LoginIn) -> dict:
+    """失败统一一句话,不区分昵称还是密码错(不给撞库者线索)。
+    password_hash 为空=登录上线前的存量用户,视同密码不对,等脚本补密码。"""
+    user = await User.get_or_none(nickname=body.nickname.strip())
+    if (
+        user is None
+        or user.password_hash is None
+        or not _verify_password(body.password, user.password_hash)
+    ):
+        raise HTTPException(401, "昵称或密码不对")
+    return {"token": await _issue_token(user), "user_id": user.id}
+
+
+@router.post("/auth/logout")
+async def logout(authorization: str = Header(default="")) -> dict:
+    """删本枚令牌,只下线本设备;令牌已不存在也算成功(幂等)。"""
+    token = authorization.removeprefix("Bearer ").strip()
+    if token:
+        await AuthToken.filter(token=token).delete()
     return {"status": "ok"}
 
 
