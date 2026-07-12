@@ -75,7 +75,16 @@ struct ClarifyCard: View {
                         .frame(width: 68)
                         .padding(.vertical, 7)
                         .padding(.horizontal, 10)
-                        .background(Theme.card, in: .rect(cornerRadius: 10))
+                        .background(
+                            // 玻璃卡上白底会被冲淡(用户真机反馈):描边+投影提可见度
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Theme.card)
+                                .shadow(color: .black.opacity(0.10), radius: 3, y: 1)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.black.opacity(0.14), lineWidth: 1)
+                        )
                         .disabled(submitting)
                     Text(q.unit)
                         .font(.system(size: 12))
