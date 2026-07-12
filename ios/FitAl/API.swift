@@ -2,9 +2,9 @@ import Foundation
 
 // 后端接口层:契约与 Web 端完全一致(/days /weights /chat)
 // 开发期直连 Mac 局域网地址;后端上云后只改这一处
+// 登录改造(契约 2026-07-12):身份来自 Bearer 令牌,不再明报 user_id
 enum API {
     static let base = URL(string: "http://192.168.10.145:8000")!
-    static let userID = 1
 
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
@@ -19,75 +19,121 @@ enum API {
         return URLSession(configuration: cfg)
     }()
 
+    /// 统一构造请求:自动带上钥匙串里的令牌
+    private static func request(
+        _ path: String, method: String = "GET",
+        query: [URLQueryItem] = [], body: Data? = nil
+    ) -> URLRequest {
+        var url = base.appending(path: path)
+        if !query.isEmpty { url.append(queryItems: query) }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        if let token = AuthStore.token {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+        }
+        return req
+    }
+
     static func fetchDay(_ dateISO: String) async throws -> APIDay {
-        var url = base.appending(path: "days/\(dateISO)")
-        url.append(queryItems: [URLQueryItem(name: "user_id", value: "\(userID)")])
-        let (data, resp) = try await session.data(from: url)
+        let (data, resp) = try await session.data(for: request("days/\(dateISO)"))
         try Self.ensureOK(resp, data: data)
         return try decoder.decode(APIDay.self, from: data)
     }
 
     /// 读身体档案:头像球首字与设置页都用它
     static func fetchUser() async throws -> UserProfile {
-        let url = base.appending(path: "users/\(userID)")
-        let (data, resp) = try await session.data(from: url)
+        let (data, resp) = try await session.data(for: request("users/me"))
         try ensureOK(resp, data: data)
         return try decoder.decode(UserProfile.self, from: data)
     }
 
     /// 改身体档案:只发改动的字段;昵称重名后端回 409,提示语透传
     static func patchUser(_ patch: UserPatch) async throws {
-        var req = URLRequest(url: base.appending(path: "users/\(userID)"))
-        req.httpMethod = "PATCH"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(patch)
+        let req = request("users/me", method: "PATCH", body: try JSONEncoder().encode(patch))
         let (data, resp) = try await session.data(for: req)
         try ensureOK(resp, data: data)
     }
 
     /// 设置页·自定义食物列表(后端按更新时间倒序)
     static func fetchUserFoods() async throws -> [UserFoodItem] {
-        var url = base.appending(path: "user-foods")
-        url.append(queryItems: [URLQueryItem(name: "user_id", value: "\(userID)")])
-        let (data, resp) = try await session.data(from: url)
+        let (data, resp) = try await session.data(for: request("user-foods"))
         try ensureOK(resp, data: data)
         return try decoder.decode(UserFoodsResponse.self, from: data).foods
     }
 
     /// 删自定义食物:只影响以后的解析,已存记录数字不动
     static func deleteUserFood(id: Int) async throws {
-        var req = URLRequest(url: base.appending(path: "user-foods/\(id)"))
-        req.httpMethod = "DELETE"
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: request("user-foods/\(id)", method: "DELETE"))
         try ensureOK(resp, data: data)
     }
 
     /// 设置页·AI 记忆列表
     static func fetchMemories() async throws -> [MemoryItem] {
-        var url = base.appending(path: "memories")
-        url.append(queryItems: [URLQueryItem(name: "user_id", value: "\(userID)")])
-        let (data, resp) = try await session.data(from: url)
+        let (data, resp) = try await session.data(for: request("memories"))
         try ensureOK(resp, data: data)
         return try decoder.decode(MemoriesResponse.self, from: data).memories
     }
 
     /// 删记忆:即停止注入解析
     static func deleteMemory(id: Int) async throws {
-        var req = URLRequest(url: base.appending(path: "memories/\(id)"))
-        req.httpMethod = "DELETE"
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: request("memories/\(id)", method: "DELETE"))
         try ensureOK(resp, data: data)
     }
 
     static func fetchWeights(days: Int = 30) async throws -> [WeightPoint] {
-        var url = base.appending(path: "weights")
-        url.append(queryItems: [
-            URLQueryItem(name: "user_id", value: "\(userID)"),
-            URLQueryItem(name: "days", value: "\(days)"),
-        ])
-        let (data, resp) = try await session.data(from: url)
+        let req = request("weights", query: [URLQueryItem(name: "days", value: "\(days)")])
+        let (data, resp) = try await session.data(for: req)
         try Self.ensureOK(resp, data: data)
         return try decoder.decode(WeightsResponse.self, from: data).weights
+    }
+
+    // MARK: - 登录/注册/退出(契约 2026-07-12)
+
+    private struct AuthResponse: Decodable { let token: String }
+
+    /// 登录:成功即把令牌收进钥匙串;失败后端统一回"昵称或密码不对"
+    static func login(nickname: String, password: String) async throws {
+        let body = try JSONEncoder().encode(["nickname": nickname, "password": password])
+        let req = request("auth/login", method: "POST", body: body)
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data, kickOn401: false) // 密码不对是业务错误,不触发踢回
+        AuthStore.save(try decoder.decode(AuthResponse.self, from: data).token)
+    }
+
+    /// 注册:邀请码+昵称+密码+身体档案一并填;成功当场发令牌,免二次登录
+    static func register(
+        inviteCode: String, nickname: String, password: String,
+        heightCm: Double, sex: String, birthYear: Int
+    ) async throws {
+        struct RegisterIn: Encodable {
+            let inviteCode: String, nickname: String, password: String
+            let heightCm: Double, sex: String, birthYear: Int
+            enum CodingKeys: String, CodingKey {
+                case nickname, password, sex
+                case inviteCode = "invite_code"
+                case heightCm = "height_cm"
+                case birthYear = "birth_year"
+            }
+        }
+        let body = try JSONEncoder().encode(RegisterIn(
+            inviteCode: inviteCode, nickname: nickname, password: password,
+            heightCm: heightCm, sex: sex, birthYear: birthYear
+        ))
+        let req = request("auth/register", method: "POST", body: body)
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data, kickOn401: false)
+        AuthStore.save(try decoder.decode(AuthResponse.self, from: data).token)
+    }
+
+    /// 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地
+    static func logout() async {
+        let req = request("auth/logout", method: "POST")
+        _ = try? await session.data(for: req)
+        AuthStore.clear()
     }
 
     /// 发一句话记录:SSE 流,取 reply 事件里的模板回执;
@@ -96,13 +142,14 @@ enum API {
         _ text: String,
         onStatus: (@Sendable (ChatStatus) -> Void)? = nil
     ) async throws -> String {
-        var req = URLRequest(url: base.appending(path: "chat"))
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(ChatIn(userId: userID, text: text))
+        var req = request("chat", method: "POST", body: try JSONEncoder().encode(ChatIn(text: text)))
         req.timeoutInterval = 120
 
         let (bytes, resp) = try await URLSession.shared.bytes(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode == 401 {
+            kickToLogin()
+            throw APIError.server("登录已失效,请重新登录")
+        }
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             throw APIError.server("发送失败(\(http.statusCode))")
         }
@@ -128,28 +175,36 @@ enum API {
 
     /// 改记录:只发改动的字段;改输入量后端重算热量,直接改热量转"你报的"
     static func patchRecord(kind: String, id: Int, patch: RecordPatch) async throws {
-        var req = URLRequest(url: base.appending(path: "records/\(kind)/\(id)"))
-        req.httpMethod = "PATCH"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(patch)
+        let req = request("records/\(kind)/\(id)", method: "PATCH", body: try JSONEncoder().encode(patch))
         let (data, resp) = try await session.data(for: req)
         try ensureOK(resp, data: data)
     }
 
     /// 删记录:kind = food | exercise | weight;删除触发所在顿/场后端重算
     static func deleteRecord(kind: String, id: Int) async throws {
-        var req = URLRequest(url: base.appending(path: "records/\(kind)/\(id)"))
-        req.httpMethod = "DELETE"
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await session.data(for: request("records/\(kind)/\(id)", method: "DELETE"))
         try ensureOK(resp, data: data)
     }
 
-    private static func ensureOK(_ resp: URLResponse, data: Data) throws {
+    /// 401 守卫(契约 2026-07-12 第二道):清本地令牌并广播,门卫整界面切回登录页;
+    /// 登录/注册自身的 401 是业务错误(密码不对),传 kickOn401: false 豁免
+    private static func ensureOK(_ resp: URLResponse, data: Data, kickOn401: Bool = true) throws {
         guard let http = resp as? HTTPURLResponse, http.statusCode >= 400 else { return }
+        if http.statusCode == 401 && kickOn401 {
+            kickToLogin()
+            throw APIError.server("登录已失效,请重新登录")
+        }
         if let detail = try? decoder.decode(ErrorDetail.self, from: data) {
             throw APIError.server(detail.detail)
         }
         throw APIError.server("请求失败(\(http.statusCode))")
+    }
+
+    private static func kickToLogin() {
+        AuthStore.clear()
+        Task { @MainActor in
+            NotificationCenter.default.post(name: .fitalUnauthorized, object: nil)
+        }
     }
 }
 
@@ -181,12 +236,7 @@ enum APIError: LocalizedError {
 // MARK: - 响应模型(字段与后端契约一一对应)
 
 private struct ChatIn: Encodable {
-    let userId: Int
     let text: String
-    enum CodingKeys: String, CodingKey {
-        case userId = "user_id"
-        case text
-    }
 }
 
 private struct ReplyData: Decodable { let text: String }
@@ -200,7 +250,7 @@ struct ChatStatus: Decodable, Sendable {
 }
 private struct ErrorDetail: Decodable { let detail: String }
 
-/// 身体档案(GET /users/{id}):昵称给头像球,其余供设置页读改
+/// 身体档案(GET /users/me):昵称给头像球,其余供设置页读改
 struct UserProfile: Decodable {
     let id: Int
     let nickname: String

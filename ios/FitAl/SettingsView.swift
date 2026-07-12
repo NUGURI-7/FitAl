@@ -7,6 +7,8 @@ struct SettingsView: View {
     let profile: UserProfile
     /// 保存成功后回调主页:球上首字与现算数字跟新
     var onSaved: () async -> Void
+    /// 退出登录后回调门卫:整界面切回登录页
+    var onLogout: () -> Void
 
     // 保存成功后基线更新,按钮回到"无改动"灰态
     @State private var baseline: UserProfile
@@ -36,9 +38,14 @@ struct SettingsView: View {
 
     @FocusState private var focused: Bool
 
-    init(profile: UserProfile, onSaved: @escaping () async -> Void) {
+    init(
+        profile: UserProfile,
+        onSaved: @escaping () async -> Void,
+        onLogout: @escaping () -> Void
+    ) {
         self.profile = profile
         self.onSaved = onSaved
+        self.onLogout = onLogout
         _baseline = State(initialValue: profile)
         _nickname = State(initialValue: profile.nickname)
         _height = State(initialValue: profile.heightCm.cleanString)
@@ -82,6 +89,11 @@ struct SettingsView: View {
                 sectionHeader("AI 记忆")
                     .padding(.top, 16)
                 memoriesSection
+
+                sectionHeader("账号")
+                    .padding(.top, 16)
+                logoutButton
+                hintText("只下线这台设备,数据都在云端;重新登录即可回来。")
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -545,12 +557,39 @@ struct SettingsView: View {
             if toast == msg { toast = nil }
         }
     }
+
+    // MARK: - 退出登录
+
+    @State private var loggingOut = false
+
+    /// 退出登录:服务器删本枚令牌+清钥匙串,门卫切回登录页;数据都在云端不受影响
+    private var logoutButton: some View {
+        Button {
+            guard !loggingOut else { return }
+            loggingOut = true
+            Task {
+                await API.logout()
+                onLogout()
+            }
+        } label: {
+            Label(loggingOut ? "退出中…" : "退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.burn)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(Theme.card, in: .rect(cornerRadius: 14))
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(loggingOut)
+    }
 }
 
 #Preview {
     NavigationStack {
         SettingsView(
-            profile: UserProfile(id: 1, nickname: "演示", heightCm: 175, sex: "male", birthYear: 1997)
-        ) {}
+            profile: UserProfile(id: 1, nickname: "演示", heightCm: 175, sex: "male", birthYear: 1997),
+            onSaved: {},
+            onLogout: {}
+        )
     }
 }

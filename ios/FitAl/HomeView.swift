@@ -6,6 +6,9 @@ import SwiftUI
 // 今天的基础代谢按已过时间折算,每分钟本地自刷,不轮询服务器
 
 struct HomeView: View {
+    /// 设置页退出登录后回调门卫:整界面切回登录页
+    var onLoggedOut: () -> Void = {}
+
     @State private var dayOffset = 0 // 0=今天,-1=昨天…
     @State private var day: APIDay?
     @State private var weights: [WeightPoint] = []
@@ -71,11 +74,15 @@ struct HomeView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { inputBar }
             .navigationDestination(isPresented: $showSettings) {
                 if let profile {
-                    SettingsView(profile: profile) {
-                        // 保存档案后:球上首字跟新,主页现算数字静默刷新
-                        if let fresh = try? await API.fetchUser() { self.profile = fresh }
-                        await load()
-                    }
+                    SettingsView(
+                        profile: profile,
+                        onSaved: {
+                            // 保存档案后:球上首字跟新,主页现算数字静默刷新
+                            if let fresh = try? await API.fetchUser() { self.profile = fresh }
+                            await load()
+                        },
+                        onLogout: onLoggedOut
+                    )
                 }
             }
             .toolbar { dateToolbar }
