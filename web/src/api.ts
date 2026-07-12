@@ -8,8 +8,38 @@ import type {
   Source,
 } from "@/types";
 
-/** 单人使用期固定用户(2026-07-06 定案,多用户时再做选人) */
-export const USER_ID = 1;
+// ── 登录态(契约 2026-07-12):令牌存 localStorage,请求头 Bearer 带上;
+// 任一业务请求 401(令牌被删/失效)即清本地令牌、整界面踢回登录页 ──────────
+
+const TOKEN_KEY = "fital_token";
+const USER_KEY = "fital_user_id";
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY);
+const getUserId = () => Number(localStorage.getItem(USER_KEY));
+
+function setAuth(token: string, userId: number) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, String(userId));
+}
+
+function clearAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+/** 守卫回调:App 挂载时注册,401 时被调,切回登录页 */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+function authHeaders(): Record<string, string> {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+/** 登录/注册自身的 401/403 是业务错误(密码不对/码无效),不触发踢回守卫 */
+const isAuthCall = (url: string) => url.startsWith("/api/auth/");
 
 // ── 后端响应结构(契约②③④) ─────────────────────────────────────────────
 
@@ -68,7 +98,15 @@ interface ApiDay {
 }
 
 async function requestJSON(url: string, init?: RequestInit) {
-  const res = await fetch(url, init);
+  const res = await fetch(url, {
+    ...init,
+    headers: { ...authHeaders(), ...init?.headers },
+  });
+  if (res.status === 401 && !isAuthCall(url)) {
+    clearAuth();
+    onUnauthorized?.();
+    throw new Error("登录已失效,请重新登录");
+  }
   if (!res.ok) {
     let msg = `请求失败(${res.status})`;
     try {
@@ -80,6 +118,53 @@ async function requestJSON(url: string, init?: RequestInit) {
     throw new Error(msg);
   }
   return res.json();
+}
+
+// ── 登录/注册/退出(契约 2026-07-12):注册当场发令牌,免二次登录 ──────────
+
+export interface RegisterBody {
+  inviteCode: string;
+  nickname: string;
+  password: string;
+  heightCm: number;
+  sex: "male" | "female";
+  birthYear: number;
+}
+
+export async function register(b: RegisterBody): Promise<void> {
+  const d = await requestJSON("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      invite_code: b.inviteCode,
+      nickname: b.nickname,
+      password: b.password,
+      height_cm: b.heightCm,
+      sex: b.sex,
+      birth_year: b.birthYear,
+    }),
+  });
+  setAuth(d.token, d.user_id);
+}
+
+export async function login(nickname: string, password: string): Promise<void> {
+  const d = await requestJSON("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nickname, password }),
+  });
+  setAuth(d.token, d.user_id);
+}
+
+/** 退出登录:服务器删本枚令牌(幂等);无论成败本地登录态都清 */
+export async function logout(): Promise<void> {
+  try {
+    await requestJSON("/api/auth/logout", { method: "POST" });
+  } catch {
+    /* 服务器不可达也照样退出本地 */
+  } finally {
+    clearAuth();
+  }
 }
 
 // ── 视图映射 ─────────────────────────────────────────────────────────────
@@ -183,7 +268,7 @@ function toGroup(
 // ── 接口调用 ─────────────────────────────────────────────────────────────
 
 export async function fetchDay(dateISO: string): Promise<DaySummary> {
-  const d: ApiDay = await requestJSON(`/api/days/${dateISO}?user_id=${USER_ID}`);
+  const d: ApiDay = await requestJSON(`/api/days/${dateISO}?user_id=${getUserId()}`);
   return {
     intakeKcal: d.intake_kcal,
     burnKcal: d.burn_kcal,
@@ -227,7 +312,7 @@ export interface UserProfile {
 }
 
 export async function fetchUser(): Promise<UserProfile> {
-  const d = await requestJSON(`/api/users/${USER_ID}`);
+  const d = await requestJSON(`/api/users/${getUserId()}`);
   return {
     id: d.id,
     nickname: d.nickname,
@@ -241,7 +326,7 @@ export async function fetchUser(): Promise<UserProfile> {
 export async function patchUser(
   body: Record<string, string | number>,
 ): Promise<void> {
-  await requestJSON(`/api/users/${USER_ID}`, {
+  await requestJSON(`/api/users/${getUserId()}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -258,7 +343,7 @@ export interface UserFoodItem {
 }
 
 export async function fetchUserFoods(): Promise<UserFoodItem[]> {
-  const d = await requestJSON(`/api/user-foods?user_id=${USER_ID}`);
+  const d = await requestJSON(`/api/user-foods?user_id=${getUserId()}`);
   return (
     d.foods as {
       id: number;
@@ -288,7 +373,7 @@ export interface MemoryItem {
 }
 
 export async function fetchMemories(): Promise<MemoryItem[]> {
-  const d = await requestJSON(`/api/memories?user_id=${USER_ID}`);
+  const d = await requestJSON(`/api/memories?user_id=${getUserId()}`);
   return (
     d.memories as {
       id: number;
@@ -315,7 +400,7 @@ export interface WeightPoint {
 }
 
 export async function fetchWeights(days = 30): Promise<WeightPoint[]> {
-  const d = await requestJSON(`/api/weights?user_id=${USER_ID}&days=${days}`);
+  const d = await requestJSON(`/api/weights?user_id=${getUserId()}&days=${days}`);
   return (
     d.weights as { id: number; weight_kg: number; created_at: string }[]
   ).map((w) => ({ id: w.id, at: new Date(w.created_at), kg: w.weight_kg }));
@@ -336,9 +421,14 @@ export async function sendChat(
 ): Promise<string> {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: USER_ID, text }),
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ user_id: getUserId(), text }),
   });
+  if (res.status === 401) {
+    clearAuth();
+    onUnauthorized?.();
+    throw new Error("登录已失效,请重新登录");
+  }
   if (!res.ok) {
     let msg = `发送失败(${res.status})`;
     try {

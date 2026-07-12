@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, Trash2 } from "lucide-react";
+import { ChevronLeft, LogOut, Trash2 } from "lucide-react";
 import {
   deleteMemory,
   deleteUserFood,
   fetchMemories,
   fetchUserFoods,
+  logout,
   patchUser,
   type MemoryItem,
   type UserFoodItem,
@@ -59,10 +60,12 @@ export function SettingsPage({
   profile,
   onClose,
   onSaved,
+  onLogout,
 }: {
   profile: UserProfile;
   onClose: () => void;
   onSaved: (msg: string) => void;
+  onLogout: () => void;
 }) {
   const [nickname, setNickname] = useState(profile.nickname);
   const [height, setHeight] = useState(String(profile.heightCm));
@@ -148,6 +151,17 @@ export function SettingsPage({
       setMemError(e instanceof Error ? e.message : "删除失败");
     } finally {
       setMemBusy(false);
+    }
+  };
+
+  // 退出登录:删服务器上本枚令牌+清本地,整界面切回登录页;数据都在云端不受影响
+  const [loggingOut, setLoggingOut] = useState(false);
+  const doLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      onLogout();
     }
   };
 
@@ -393,6 +407,22 @@ export function SettingsPage({
             「纠正」是你改删 AI 估算记录时系统自动记的。
           </p>
         )}
+
+        <p className="px-1 pt-6 pb-2 text-[12px] font-semibold text-ink-soft">
+          账号
+        </p>
+        <button
+          type="button"
+          onClick={doLogout}
+          disabled={loggingOut}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-card py-3 text-[15px] font-semibold text-burn ring-1 ring-black/[0.04] transition-transform active:scale-[0.98] disabled:opacity-40"
+        >
+          <LogOut size={16} strokeWidth={2.5} />
+          {loggingOut ? "退出中…" : "退出登录"}
+        </button>
+        <p className="px-1 pt-2 text-[11px] leading-relaxed text-ink-soft/80">
+          只下线这台设备,数据都在云端;重新登录即可回来。
+        </p>
       </main>
     </div>
   );

@@ -6,7 +6,9 @@ import {
   fetchDay,
   fetchUser,
   fetchWeights,
+  getToken,
   sendChat,
+  setUnauthorizedHandler,
   type UserProfile,
   type WeightPoint,
 } from "@/api";
@@ -14,6 +16,7 @@ import { GroupCard } from "@/components/GroupCard";
 import { Hero } from "@/components/Hero";
 import { InputBar } from "@/components/InputBar";
 import { ItemSheet } from "@/components/ItemSheet";
+import { LoginPage } from "@/components/LoginPage";
 import { ProcessPanel } from "@/components/ProcessPanel";
 import { SettingsPage } from "@/components/SettingsPage";
 import { TopBar } from "@/components/TopBar";
@@ -107,7 +110,7 @@ function Section({
   );
 }
 
-function App() {
+function App({ onLoggedOut }: { onLoggedOut: () => void }) {
   const [date, setDate] = useState(() => new Date());
   const [day, setDay] = useState<DaySummary | null>(null);
   const [weights, setWeights] = useState<WeightPoint[] | null>(null);
@@ -410,6 +413,7 @@ function App() {
           profile={profile}
           onClose={() => setShowSettings(false)}
           onSaved={handleProfileSaved}
+          onLogout={onLoggedOut}
         />
       )}
       {showWeights && (
@@ -427,4 +431,17 @@ function App() {
   );
 }
 
-export default App;
+/** 登录门卫(契约 2026-07-12 两道守卫):
+ * ①启动时本地无令牌直接进登录页;②任何请求 401 即清令牌、整界面切回登录页。
+ * 登录/退出都靠换挂载:主界面整体重挂,状态天然按当前用户重新拉起 */
+function Root() {
+  const [authed, setAuthed] = useState(() => getToken() != null);
+  useEffect(() => {
+    setUnauthorizedHandler(() => setAuthed(false));
+    return () => setUnauthorizedHandler(null);
+  }, []);
+  if (!authed) return <LoginPage onAuthed={() => setAuthed(true)} />;
+  return <App onLoggedOut={() => setAuthed(false)} />;
+}
+
+export default Root;
