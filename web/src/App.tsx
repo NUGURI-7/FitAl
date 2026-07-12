@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dumbbell, NotebookPen, Settings, UtensilsCrossed } from "lucide-react";
 import {
+  type ChatClarify,
   type ChatStatus,
   deleteRecord,
   fetchDay,
@@ -12,6 +13,7 @@ import {
   type UserProfile,
   type WeightPoint,
 } from "@/api";
+import { ClarifyCard } from "@/components/ClarifyCard";
 import { GroupCard } from "@/components/GroupCard";
 import { Hero } from "@/components/Hero";
 import { InputBar } from "@/components/InputBar";
@@ -135,6 +137,9 @@ function App({ onLoggedOut }: { onLoggedOut: () => void }) {
   const procSeq = useRef(0);
   // 回执压到面板收场后再弹,两者同位不打架
   const pendingToast = useRef<{ text: string; error: boolean } | null>(null);
+  // 澄清小表单(罕见兜底):同样压到面板收场后浮出;表单易失,数据在服务器待补行上
+  const [clarify, setClarify] = useState<ChatClarify | null>(null);
+  const pendingClarify = useRef<ChatClarify | null>(null);
 
   const showToast = (text: string, isError = false) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -182,6 +187,8 @@ function App({ onLoggedOut }: { onLoggedOut: () => void }) {
   const handleSend = async (text: string): Promise<boolean> => {
     setSending(true);
     setToast(null); // 旧气泡先退场,发送期间舞台交给过程面板
+    setClarify(null); // 没填的旧表单收起(数据不丢,待补行躺在服务器上)
+    pendingClarify.current = null;
     // 上一条回执还压着没弹(面板收场中就连发)则先弹出来
     if (pendingToast.current) {
       showToast(pendingToast.current.text, pendingToast.current.error);
@@ -190,10 +197,11 @@ function App({ onLoggedOut }: { onLoggedOut: () => void }) {
     procSeq.current += 1;
     setProc({ seq: procSeq.current, events: [], done: false });
     try {
-      const reply = await sendChat(text, (s) =>
+      const { reply, clarify: asked } = await sendChat(text, (s) =>
         setProc((p) => (p ? { ...p, events: [...p.events, s] } : p)),
       );
       pendingToast.current = { text: reply, error: false };
+      pendingClarify.current = asked;
       // 记录永远落在"现在":不在今天就跳回今天,否则原地静默刷新
       if (isToday(date)) await load(date, true);
       else setDate(new Date());
@@ -211,13 +219,32 @@ function App({ onLoggedOut }: { onLoggedOut: () => void }) {
     }
   };
 
-  // 面板收场完毕:卸掉面板,弹出压着的回执
+  // 面板收场完毕:卸掉面板,弹出压着的回执与澄清表单
   const handleProcGone = () => {
     setProc(null);
     if (pendingToast.current) {
       showToast(pendingToast.current.text, pendingToast.current.error);
       pendingToast.current = null;
     }
+    if (pendingClarify.current) {
+      setClarify(pendingClarify.current);
+      pendingClarify.current = null;
+    }
+  };
+
+  // 澄清补交成功:表单收起、弹回执;记录落在补交这一刻,不在今天就跳回今天
+  const handleClarifyDone = async (reply: string) => {
+    setClarify(null);
+    showToast(reply);
+    if (isToday(date)) await load(date, true);
+    else setDate(new Date());
+  };
+
+  // 待补行已经被处理过(409):表单没有存在意义,收起并提示
+  const handleClarifyStale = async (msg: string) => {
+    setClarify(null);
+    showToast(msg, true);
+    await load(date, true);
   };
 
   const handleEdited = async (msg: string) => {
@@ -336,6 +363,16 @@ function App({ onLoggedOut }: { onLoggedOut: () => void }) {
           events={proc.events}
           done={proc.done}
           onGone={handleProcGone}
+        />
+      )}
+
+      {/* 澄清小表单(罕见兜底):运动段缺数,填一格数字补交即记上 */}
+      {clarify && (
+        <ClarifyCard
+          clarify={clarify}
+          onDone={handleClarifyDone}
+          onDismiss={() => setClarify(null)}
+          onStale={handleClarifyStale}
         />
       )}
 

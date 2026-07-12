@@ -417,12 +417,48 @@ export type ChatStatus =
   | { stage: "track_done"; track: string }
   | { stage: "saving" };
 
-/** 发一句话记录:走对话接口(SSE),返回后端的模板回执;
+/** /chat 澄清事件(契约 event:clarify,2026-07-12):运动段缺数,
+ * 该段挂起在服务器待补,前端弹小表单补交 */
+export interface ClarifyQuestion {
+  key: string;
+  prompt: string;
+  unit: string;
+  required: boolean;
+}
+
+export interface ChatClarify {
+  inputId: number;
+  text: string;
+  questions: ClarifyQuestion[];
+  /** 至少填几个(次数/时长两问一组答其一即可) */
+  minAnswers: number;
+}
+
+export interface ChatResult {
+  reply: string;
+  clarify: ChatClarify | null;
+}
+
+/** 澄清补交:答案填进服务器存着的半成品,纯代码续算入库(零 AI,毫秒级);
+ * 返回回执文字。400=没填够/乱填(带缺啥),409=已补过/不在待补态 */
+export async function submitClarify(
+  inputId: number,
+  answers: Record<string, number>,
+): Promise<string> {
+  const d = await requestJSON(`/api/inputs/${inputId}/clarify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answers }),
+  });
+  return (d.reply as string) || "已记录";
+}
+
+/** 发一句话记录:走对话接口(SSE),返回后端的模板回执与可能的澄清请求;
  * 状态事件按到达顺序回调给 onStatus(过程面板消费) */
 export async function sendChat(
   text: string,
   onStatus?: (s: ChatStatus) => void,
-): Promise<string> {
+): Promise<ChatResult> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -448,6 +484,7 @@ export async function sendChat(
   const decoder = new TextDecoder();
   let buf = "";
   let reply = "";
+  let clarify: ChatClarify | null = null;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -474,8 +511,25 @@ export async function sendChat(
         } catch {
           /* 状态事件坏了不影响主链路 */
         }
+      } else if (event === "clarify" && data) {
+        try {
+          const c = JSON.parse(data) as {
+            input_id: number;
+            text: string;
+            questions: ClarifyQuestion[];
+            min_answers: number;
+          };
+          clarify = {
+            inputId: c.input_id,
+            text: c.text,
+            questions: c.questions,
+            minAnswers: c.min_answers,
+          };
+        } catch {
+          /* 澄清事件坏了不影响主链路,该段留在服务器待补 */
+        }
       }
     }
   }
-  return reply || "已记录";
+  return { reply: reply || "已记录", clarify };
 }

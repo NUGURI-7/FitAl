@@ -33,6 +33,9 @@ struct HomeView: View {
     @State private var procSeq = 0
     // 回执压到面板收场后再弹,两者同位不打架
     @State private var pendingToast: (text: String, error: Bool)?
+    // 澄清小表单(罕见兜底):同样压到面板收场后浮出;表单易失,数据在服务器待补行上
+    @State private var clarify: ChatClarify?
+    @State private var pendingClarify: ChatClarify?
     @State private var expandedDishes: Set<String> = []
     @State private var armedDishID: String?
     @State private var dishDeleting = false
@@ -745,8 +748,33 @@ struct HomeView: View {
                         showToast(p.text, error: p.error)
                         pendingToast = nil
                     }
+                    if let c = pendingClarify {
+                        clarify = c
+                        pendingClarify = nil
+                    }
                 }
                 .id(procSeq)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            // 澄清小表单:运动段缺数,填一格数字补交即记上
+            if let c = clarify {
+                ClarifyCard(
+                    clarify: c,
+                    onDone: { reply in
+                        clarify = nil
+                        sendCount += 1
+                        showToast(reply)
+                        if dayOffset != 0 { dayOffset = 0 } // 记录落在补交这一刻
+                        Task { await load() }
+                    },
+                    onDismiss: { clarify = nil },
+                    onStale: { msg in
+                        clarify = nil
+                        showToast(msg, error: true)
+                        Task { await load() }
+                    }
+                )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
@@ -786,6 +814,7 @@ struct HomeView: View {
         .padding(.bottom, 6)
         .animation(.spring(duration: 0.4), value: toast)
         .animation(.spring(duration: 0.4), value: procActive)
+        .animation(.spring(duration: 0.4), value: clarify)
     }
 
     // MARK: - 头像球菜单(液态玻璃,齿轮从球里长出来;后续新功能继续往上摞球)
@@ -891,6 +920,8 @@ struct HomeView: View {
         sending = true
         inputText = ""
         toast = nil // 旧气泡先退场,发送期间舞台交给过程面板
+        clarify = nil // 没填的旧表单收起(数据不丢,待补行躺在服务器上)
+        pendingClarify = nil
         // 上一条回执还压着没弹(面板收场中就连发)则先弹出来
         if let p = pendingToast {
             showToast(p.text, error: p.error)
@@ -902,11 +933,12 @@ struct HomeView: View {
         procActive = true
         Task {
             do {
-                let reply = try await API.sendChat(text) { s in
+                let outcome = try await API.sendChat(text) { s in
                     Task { @MainActor in procEvents.append(s) }
                 }
                 sendCount += 1
-                pendingToast = (reply, false)
+                pendingToast = (outcome.reply, false)
+                pendingClarify = outcome.clarify
                 if dayOffset != 0 { dayOffset = 0 } // 记录永远落在"现在",发送后跳回今天
                 await load()
             } catch {

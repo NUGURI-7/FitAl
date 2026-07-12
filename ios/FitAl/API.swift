@@ -137,12 +137,12 @@ enum API {
         AuthStore.clear()
     }
 
-    /// 发一句话记录:SSE 流,取 reply 事件里的模板回执;
+    /// 发一句话记录:SSE 流,取 reply 事件里的模板回执与可能的澄清请求;
     /// 状态事件(event:status)按到达顺序回调给 onStatus,过程面板消费
     static func sendChat(
         _ text: String,
         onStatus: (@Sendable (ChatStatus) -> Void)? = nil
-    ) async throws -> String {
+    ) async throws -> ChatOutcome {
         var req = request("chat", method: "POST", body: try JSONEncoder().encode(ChatIn(text: text)))
         req.timeoutInterval = 120
 
@@ -157,6 +157,7 @@ enum API {
 
         var event = ""
         var reply = ""
+        var clarify: ChatClarify?
         for try await line in bytes.lines {
             if line.hasPrefix("event:") {
                 event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
@@ -168,10 +169,28 @@ enum API {
                 } else if event == "status",
                           let s = try? decoder.decode(ChatStatus.self, from: d) {
                     onStatus?(s) // 状态事件坏了不影响主链路(解码失败静默跳过)
+                } else if event == "clarify",
+                          let c = try? decoder.decode(ChatClarify.self, from: d) {
+                    clarify = c // 澄清事件坏了同理:该段留在服务器待补,不伤主链路
                 }
             }
         }
-        return reply.isEmpty ? "已记录" : reply
+        return ChatOutcome(reply: reply.isEmpty ? "已记录" : reply, clarify: clarify)
+    }
+
+    /// 澄清补交(契约 2026-07-12):答案填进服务器存着的半成品,
+    /// 纯代码续算入库(零 AI,毫秒级),返回回执文字。
+    /// 400=没填够/乱填(带缺啥),409=已补过/不在待补态,提示语透传
+    static func submitClarify(inputId: Int, answers: [String: Double]) async throws -> String {
+        struct ClarifyIn: Encodable { let answers: [String: Double] }
+        struct ClarifyOut: Decodable { let reply: String }
+        let req = request(
+            "inputs/\(inputId)/clarify", method: "POST",
+            body: try JSONEncoder().encode(ClarifyIn(answers: answers))
+        )
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data)
+        return (try? decoder.decode(ClarifyOut.self, from: data).reply) ?? "已记录"
     }
 
     /// 改记录:只发改动的字段;改输入量后端重算热量,直接改热量转"你报的"
@@ -248,6 +267,30 @@ struct ChatStatus: Decodable, Sendable {
     let stage: String
     var tracks: [String]?
     var track: String?
+}
+
+/// /chat 澄清事件里的一个问题:固定=一句问话+数字输入框+单位,不做通用表单
+struct ClarifyQuestion: Decodable, Sendable, Equatable {
+    let key: String
+    let prompt: String
+    let unit: String
+    let required: Bool
+}
+
+/// /chat 澄清事件(契约 event:clarify,2026-07-12):运动段缺数,
+/// 该段挂起在服务器待补,前端弹小表单补交
+struct ChatClarify: Decodable, Sendable, Equatable {
+    let inputId: Int
+    let text: String
+    let questions: [ClarifyQuestion]
+    /// 至少填几个(次数/时长两问一组答其一即可)
+    let minAnswers: Int
+}
+
+/// 一次发送的完整结果:模板回执 + 可能的澄清请求
+struct ChatOutcome: Sendable {
+    let reply: String
+    let clarify: ChatClarify?
 }
 private struct ErrorDetail: Decodable { let detail: String }
 
