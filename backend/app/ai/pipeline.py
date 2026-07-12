@@ -24,6 +24,7 @@ from pydantic_ai.settings import ModelSettings
 
 from app.ai import lookup, parser
 from app.ai.schema import (
+    CleanEstimate,
     ExerciseParseOutput,
     ParsedDish,
     ParsedExercise,
@@ -188,14 +189,23 @@ def _eat_instructions() -> str:
    并填 est_kcal(这份调味的总热量,成分表没有调味条目);
    盐/醋/生抽/胡椒等低热量调味忽略不出条。纯水煮/清蒸且没提油就不补。
    用户自己报了油/调味则正常解析,不打标。
-6. 复合菜/带馅带夹心面点等多成分食物 → 输出 dish 条目:dish_name=用户的叫法;
-   用户报了总克重则 total_grams 必须原样用用户的数,没报则 total_grams=各成分克数之和;
-   成分拆为表内食材逐条估克数(估克重可以,估热量不行),各成分克数之和必须等于
-   总克重——成分(馅、夹心、配料)是总量的组成部分,绝不能在总克重之外额外叠加;
-   规则5的补油补调味对 dish 同样生效:做法需要而用户没提的油/高热量调味,
-   作为成分列入 ingredients(占总克重的份额),不得漏;
-   est_total_kcal 必填:整道菜总热量的常识估算,代码拿它与查表结果对账。
-   单独报的一种食物用 food,不用 dish。
+6. 复合菜(一个菜名下天然含多种成分:炒菜/肠粉/面/盖饭/带馅面点等),分两种:
+   判据=用户在菜名之外有没有另外交代成分:菜名本身带食材字样
+   (西红柿炒鸡蛋/鸡蛋肠粉/牛肉面)不算报了成分;
+   "毛毛虫面包120克,里面奶油占30克"这种菜名之外点了成分/克数才算报了。
+   a. 用户报出了成分(点名了有哪些成分,或给了成分克数)→ 输出 dish 条目:
+      dish_name=用户的叫法;用户报了总克重则 total_grams 必须原样用用户的数,
+      没报则 total_grams=各成分克数之和;成分拆为表内食材逐条估克数
+      (估克重可以,估热量不行),各成分克数之和必须等于总克重——成分是总量的
+      组成部分,绝不能在总克重之外额外叠加;规则5的补油补调味对 dish 同样生效,
+      油/调味作为成分列入 ingredients(占总克重的份额),不得漏;
+      est_total_kcal 必填:整道菜总热量的常识估算,代码拿它与查表结果对账。
+   b. 用户只说了菜名(至多带份数/总克重)→ 输出一条 food 并把 whole_dish 填 true:
+      spoken_name 和 name 都照抄用户的菜名,绝不往成分表映射、绝不自行拆成分、
+      不补油不补调味;grams 仅用户报了总克重才填,没报留空(不适用规则3的换算);
+      est_kcal 不用填,热量由系统另行估算。
+   单独报的一种食材(如"200克鸡胸肉""一根香蕉""100克水煮虾仁")照旧用 food
+   映射查表,不算复合菜;带重油重糖做法的(红烧X/炒X)没报成分按 b 整菜处理。
 7. 餐次归属:仅当用户明说了这是哪一顿——早餐/早饭→早餐,午餐/午饭/中饭→午餐,
    下午茶/下午加餐→下午茶,晚餐/晚饭→晚餐,夜宵/宵夜→其余——才填 meal_slot;
    没明说必须不填(留空),系统会按时间自动归,绝不要猜。
@@ -226,6 +236,31 @@ def _exercise_instructions() -> str:
 
 MET 表({len(lookup.met_items())}条):
 {parser._met_table_block()}"""
+
+
+def _estimate_instructions() -> str:
+    return """按常识估算用户吃的这份食物的总热量(千卡)与总克重(克),像日常聊天一样直接估。
+用户报了克重就按报的克重估热量。"""
+
+
+@lru_cache(maxsize=1)
+def estimate_agent() -> Agent:
+    """干净估算(2026-07-12 用户定):输入=用户原话,不带规则/表/记忆——
+    和用户在网页聊天里问别的模型完全一样的任务形态,估算力不被管线任务压制。"""
+    return Agent(
+        parser._model(),
+        output_type=CleanEstimate,
+        instructions=_estimate_instructions(),
+        retries=1,
+        model_settings=parser._model_settings(),
+    )
+
+
+async def _estimate_call(text: str, item: ParsedFood) -> CleanEstimate:
+    ask = f"用户说:{text}\n请估算其中「{item.spoken_name}」这份" + (
+        f"(用户报了约{item.grams:g}克)" if item.grams else ""
+    )
+    return (await estimate_agent().run(ask)).output
 
 
 def _remember_instructions() -> str:
@@ -494,4 +529,32 @@ async def parse_via_triage(
     await parser.adjudicate_names(
         result.output, text, user_food_keys, rounds_sink=rounds_sink
     )
+
+    # 干净估算:整菜条目与查表未命中且无内联估算的单品,各发一次无污染调用
+    targets = [
+        i
+        for i in result.output.items
+        if isinstance(i, ParsedFood) and parser.needs_clean_estimate(i, user_food_keys)
+    ]
+    if targets:
+        estimates = await asyncio.gather(
+            *(_estimate_call(text, i) for i in targets), return_exceptions=True
+        )
+        est_dump: dict = {}
+        for item, est in zip(targets, estimates):
+            if isinstance(est, BaseException):
+                # 估不出来只降级这一条,不拖垮整句
+                result.failed_texts.append(item.spoken_name)
+                result.failed_tracks.setdefault(
+                    "estimate", f"{type(est).__name__}: {est}"
+                )
+                result.output.items.remove(item)
+                est_dump[item.spoken_name] = {"error": str(est)}
+                continue
+            item.est_kcal = est.kcal
+            if item.grams is None and est.grams:
+                item.grams = est.grams
+            est_dump[item.spoken_name] = est.model_dump()
+        if rounds_sink is not None:
+            rounds_sink["estimate"] = est_dump
     return result

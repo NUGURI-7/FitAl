@@ -133,12 +133,12 @@ def test_校验器_不可解的输出被列为问题():
                 ParsedFood(spoken_name="鸡胸肉", name="鸡胸脯肉"),  # 缺份量
                 ParsedFood(
                     spoken_name="外星料理", name="外星料理", grams=100
-                ),  # 表外且无估算
+                ),  # 表外且无估算:2026-07-12 起不再打回,静默走干净估算
             ]
         ),
         frozenset(),
     )
-    assert len(problems) == 4
+    assert len(problems) == 3
 
 
 def test_校验器_合格输出零问题():
@@ -314,6 +314,62 @@ def test_对账哨兵_重试不过整菜降级为估算一条_数值取整菜估
     assert r.source == "llm_estimated"
     assert r.kcal == 330  # 用模型的整菜估算,绝不用823那个口径错配的合计
     assert r.food_name == "鸡蛋肠粉"
+    assert r.grams == 250
+
+
+# ── 整菜不拆 + 干净估算(2026-07-12 用户定:没报成分的复合菜一条整菜,数从干净估算来) ──
+
+
+def _whole(name="牛肉肠粉", **kw):
+    return ParsedFood(spoken_name=name, name=name, whole_dish=True, **kw)
+
+
+def test_干净估算_整菜条目必走_报了热量或自定义带克数则不走():
+    assert parser.needs_clean_estimate(_whole(), frozenset())
+    assert parser.needs_clean_estimate(
+        _whole(grams=250), frozenset()
+    )  # 有克重也要估热量
+    assert not parser.needs_clean_estimate(
+        _whole(reported_kcal=300), frozenset()
+    )  # 自报热量优先
+    uf = frozenset({lookup.norm_key("牛肉肠粉")})
+    assert not parser.needs_clean_estimate(
+        _whole(grams=250), uf
+    )  # 自定义命中+克数=直接算
+    assert parser.needs_clean_estimate(_whole(), uf)  # 自定义命中但没克数,还得估克重
+
+
+def test_干净估算_表内单品与带内联估算的表外单品都不走():
+    table_hit = ParsedFood(spoken_name="鸡胸肉", name="鸡胸脯肉", grams=200)
+    assert not parser.needs_clean_estimate(table_hit, frozenset())
+    with_est = ParsedFood(spoken_name="柠檬茶", name="柠檬茶", grams=400, est_kcal=120)
+    assert not parser.needs_clean_estimate(with_est, frozenset())
+    no_est = ParsedFood(spoken_name="柠檬茶", name="柠檬茶", grams=400)
+    assert parser.needs_clean_estimate(no_est, frozenset())  # 表外又没估算,兜底
+
+
+def test_干净估算_调味条目不占调用():
+    oil = ParsedFood(spoken_name="油", name="菜籽油", grams=10, is_condiment=True)
+    assert not parser.needs_clean_estimate(oil, frozenset())
+
+
+def test_整菜条目_缺克数不打回_名字不进候选裁决():
+    import asyncio
+
+    whole = _whole()  # 牛肉肠粉:表里有大量"牛肉X"候选,重映射是危险动作
+    assert parser.output_problems(ParseOutput(items=[whole]), frozenset()) == []
+    # whole_dish 被跳过 → 待裁决清单为空 → 不发任何模型调用,直接返回(发了会连不上炸)
+    asyncio.run(parser.adjudicate_names(ParseOutput(items=[whole]), "吃了一份牛肉肠粉"))
+
+
+def test_整菜条目_填入估算后按估算来源建档():
+    whole = _whole()
+    whole.est_kcal = 289.0  # 干净估算调用回填
+    whole.grams = 250.0
+    [r] = _build([whole])
+    assert r.source == "llm_estimated"
+    assert r.kcal == 289
+    assert r.food_name == "牛肉肠粉"
     assert r.grams == 250
 
 

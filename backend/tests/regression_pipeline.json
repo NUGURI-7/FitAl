@@ -2,7 +2,7 @@
   "summary": {
     "pipeline": "v2-triage-concurrent",
     "model": "deepseek-v4-flash",
-    "run_at": "2026-07-12T09:38:17+08:00",
+    "run_at": "2026-07-12T10:27:17+08:00",
     "context": {
       "profile": {
         "weight_kg": 68.1,
@@ -19,18 +19,18 @@
       "last_exercise_at": null
     },
     "total": 28,
-    "ok": 27,
-    "partial": 1,
+    "ok": 28,
+    "partial": 0,
     "failed": 0,
-    "seconds_avg": 5.35,
-    "seconds_max": 20.5
+    "seconds_avg": 5.68,
+    "seconds_max": 37.85
   },
   "results": [
     {
       "text": "卧推60公斤10个",
       "ok": true,
       "status": "ok",
-      "seconds": 3.41,
+      "seconds": 3.0,
       "failed_tracks": null,
       "records": [
         {
@@ -86,7 +86,7 @@
       "text": "再来一组卧推65公斤8个",
       "ok": true,
       "status": "ok",
-      "seconds": 2.7,
+      "seconds": 2.67,
       "failed_tracks": null,
       "records": [
         {
@@ -142,7 +142,7 @@
       "text": "中午吃了200克鸡胸肉和一碗米饭",
       "ok": true,
       "status": "ok",
-      "seconds": 5.25,
+      "seconds": 5.33,
       "failed_tracks": null,
       "records": [
         {
@@ -160,14 +160,14 @@
         },
         {
           "record_type": "ResolvedFood",
-          "food_name": "米饭（代表值）",
-          "source": "llm_estimated",
+          "food_name": "米饭(蒸，代表值)",
+          "source": "food_table",
           "kcal": 174.0,
           "grams": 150.0,
-          "protein": null,
-          "fat": null,
-          "cho": null,
-          "fiber": null,
+          "protein": 3.9,
+          "fat": 0.4,
+          "cho": 38.8,
+          "fiber": 0.4,
           "meal_slot": "午餐",
           "dish": null
         }
@@ -188,31 +188,43 @@
             {
               "type": "food",
               "spoken_name": "鸡胸肉",
-              "name": "鸡胸脯肉（代表值）",
+              "name": "鸡胸肉（代表值）",
               "grams": 200.0,
               "count": null,
               "form": null,
               "reported_kcal": null,
               "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "午餐"
             },
             {
               "type": "food",
-              "spoken_name": "米饭",
+              "spoken_name": "一碗米饭",
               "name": "米饭（代表值）",
               "grams": 150.0,
               "count": 1,
               "form": null,
               "reported_kcal": null,
-              "est_kcal": 174.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "午餐"
             }
           ]
         },
         "remap": {
           "pending": {
+            "鸡胸肉（代表值）": [
+              "鸡胸脯肉",
+              "火鸡胸脯肉",
+              "鸡肉松",
+              "火鸡腿肉",
+              "鸭胸脯肉",
+              "肉鸡(肥)",
+              "羊肉(胸脯)",
+              "鸡肝(肉鸡)"
+            ],
             "米饭（代表值）": [
               "籼米饭(蒸)",
               "粳米饭(蒸)",
@@ -220,7 +232,8 @@
             ]
           },
           "mapping": {
-            "米饭": "米饭(蒸,代表值)"
+            "鸡胸肉（代表值）": "鸡胸脯肉",
+            "米饭（代表值）": "米饭(蒸,代表值)"
           }
         }
       }
@@ -229,7 +242,7 @@
       "text": "硬拉100公斤5个",
       "ok": true,
       "status": "ok",
-      "seconds": 2.45,
+      "seconds": 2.6,
       "failed_tracks": null,
       "records": [
         {
@@ -285,7 +298,7 @@
       "text": "硬拉100公斤5个又一组",
       "ok": true,
       "status": "ok",
-      "seconds": 2.76,
+      "seconds": 2.93,
       "failed_tracks": null,
       "records": [
         {
@@ -298,8 +311,8 @@
           "duration_min": 0.33,
           "load_kg": 100.0,
           "reps": 5,
-          "starts_new_group": false,
-          "group_name": "上午力量训练"
+          "starts_new_group": true,
+          "group_name": "上午硬拉训练"
         }
       ],
       "rounds": {
@@ -325,8 +338,8 @@
               "reported_kcal": null,
               "fallback_tier": null,
               "est_met": null,
-              "starts_new_group": false,
-              "group_name": "上午力量训练"
+              "starts_new_group": true,
+              "group_name": "上午硬拉训练"
             }
           ],
           "strategy": {
@@ -341,47 +354,21 @@
       "text": "中午吃了碗牛肉面",
       "ok": true,
       "status": "ok",
-      "seconds": 6.83,
+      "seconds": 3.94,
       "failed_tracks": null,
       "records": [
         {
           "record_type": "ResolvedFood",
-          "food_name": "面条(富强粉，煮)",
-          "source": "food_table",
-          "kcal": 214.0,
-          "grams": 200.0,
-          "protein": 7.8,
-          "fat": 0.8,
-          "cho": 45.6,
-          "fiber": null,
-          "meal_slot": "午餐",
-          "dish": "牛肉面"
-        },
-        {
-          "record_type": "ResolvedFood",
-          "food_name": "酱牛肉",
-          "source": "food_table",
-          "kcal": 196.8,
-          "grams": 80.0,
-          "protein": 25.1,
-          "fat": 9.5,
-          "cho": 2.6,
-          "fiber": 0.0,
-          "meal_slot": "午餐",
-          "dish": "牛肉面"
-        },
-        {
-          "record_type": "ResolvedFood",
-          "food_name": "牛肉汤",
+          "food_name": "牛肉面",
           "source": "llm_estimated",
-          "kcal": 44.0,
-          "grams": 220.0,
+          "kcal": 550.0,
+          "grams": 600.0,
           "protein": null,
           "fat": null,
           "cho": null,
           "fiber": null,
           "meal_slot": "午餐",
-          "dish": "牛肉面"
+          "dish": null
         }
       ],
       "rounds": {
@@ -398,74 +385,24 @@
         "eat": {
           "items": [
             {
-              "type": "dish",
-              "dish_name": "牛肉面",
-              "total_grams": 500.0,
-              "ingredients": [
-                {
-                  "spoken_name": "面条",
-                  "name": "面条(代表值)",
-                  "grams": 200.0,
-                  "form": "熟",
-                  "est_kcal": 220.0
-                },
-                {
-                  "spoken_name": "牛肉",
-                  "name": "牛肉(代表值)",
-                  "grams": 80.0,
-                  "form": "熟",
-                  "est_kcal": 160.0
-                },
-                {
-                  "spoken_name": "牛肉汤",
-                  "name": "牛肉汤",
-                  "grams": 220.0,
-                  "form": null,
-                  "est_kcal": 44.0
-                }
-              ],
-              "est_total_kcal": 550.0,
+              "type": "food",
+              "spoken_name": "牛肉面",
+              "name": "牛肉面",
+              "grams": null,
+              "count": null,
+              "form": null,
+              "reported_kcal": null,
+              "est_kcal": null,
+              "is_condiment": false,
+              "whole_dish": true,
               "meal_slot": "午餐"
             }
           ]
         },
-        "remap": {
-          "pending": {
-            "面条(代表值)": [
-              "银鱼",
-              "玉米面面条",
-              "高粱面面条",
-              "面条(干切面)",
-              "面条(虾蓉面)",
-              "面条(富强粉,煮)",
-              "面条(特粉,切面)",
-              "面条(生,代表值)"
-            ],
-            "牛肉(代表值)": [
-              "牛肉干",
-              "牛肉松",
-              "牦牛肉",
-              "酱牛肉",
-              "咖喱牛肉干",
-              "牛肉(前腱)",
-              "牛肉(前腿)",
-              "牛肉(后腱)"
-            ],
-            "牛肉汤": [
-              "牛肉干",
-              "牛肉松",
-              "牦牛肉",
-              "酱牛肉",
-              "咖喱牛肉干",
-              "牛肉(前腱)",
-              "牛肉(前腿)",
-              "牛肉(后腱)"
-            ]
-          },
-          "mapping": {
-            "面条(代表值)": "面条(富强粉,煮)",
-            "牛肉(代表值)": "酱牛肉",
-            "牛肉汤": null
+        "estimate": {
+          "牛肉面": {
+            "kcal": 550.0,
+            "grams": 600.0
           }
         }
       }
@@ -474,7 +411,7 @@
       "text": "又吃了根黄瓜100克",
       "ok": true,
       "status": "ok",
-      "seconds": 4.73,
+      "seconds": 3.83,
       "failed_tracks": null,
       "records": [
         {
@@ -512,8 +449,9 @@
               "count": null,
               "form": null,
               "reported_kcal": null,
-              "est_kcal": 16.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
@@ -539,7 +477,7 @@
       "text": "又做了一组硬拉100公斤5个",
       "ok": true,
       "status": "ok",
-      "seconds": 2.67,
+      "seconds": 3.03,
       "failed_tracks": null,
       "records": [
         {
@@ -595,7 +533,7 @@
       "text": "吃了150克鸡胸肉和一碗米饭",
       "ok": true,
       "status": "ok",
-      "seconds": 5.68,
+      "seconds": 4.24,
       "failed_tracks": null,
       "records": [
         {
@@ -613,14 +551,14 @@
         },
         {
           "record_type": "ResolvedFood",
-          "food_name": "米饭（代表值）",
-          "source": "llm_estimated",
+          "food_name": "米饭(蒸，代表值)",
+          "source": "food_table",
           "kcal": 174.0,
           "grams": 150.0,
-          "protein": null,
-          "fat": null,
-          "cho": null,
-          "fiber": null,
+          "protein": 3.9,
+          "fat": 0.4,
+          "cho": 38.8,
+          "fiber": 0.4,
           "meal_slot": null,
           "dish": null
         }
@@ -641,13 +579,14 @@
             {
               "type": "food",
               "spoken_name": "鸡胸肉",
-              "name": "鸡胸脯肉（代表值）",
+              "name": "鸡胸肉（代表值）",
               "grams": 150.0,
               "count": null,
               "form": null,
               "reported_kcal": null,
               "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             },
             {
@@ -655,17 +594,28 @@
               "spoken_name": "一碗米饭",
               "name": "米饭（代表值）",
               "grams": 150.0,
-              "count": 1,
+              "count": null,
               "form": null,
               "reported_kcal": null,
-              "est_kcal": 174.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
         },
         "remap": {
           "pending": {
+            "鸡胸肉（代表值）": [
+              "鸡胸脯肉",
+              "火鸡胸脯肉",
+              "鸡肉松",
+              "火鸡腿肉",
+              "鸭胸脯肉",
+              "肉鸡(肥)",
+              "羊肉(胸脯)",
+              "鸡肝(肉鸡)"
+            ],
             "米饭（代表值）": [
               "籼米饭(蒸)",
               "粳米饭(蒸)",
@@ -673,7 +623,8 @@
             ]
           },
           "mapping": {
-            "米饭": "米饭(蒸,代表值)"
+            "鸡胸肉（代表值）": "鸡胸脯肉",
+            "米饭（代表值）": "米饭(蒸,代表值)"
           }
         }
       }
@@ -682,7 +633,7 @@
       "text": "卧推60公斤12个",
       "ok": true,
       "status": "ok",
-      "seconds": 3.13,
+      "seconds": 2.76,
       "failed_tracks": null,
       "records": [
         {
@@ -738,7 +689,7 @@
       "text": "喝了一勺蛋白粉",
       "ok": true,
       "status": "ok",
-      "seconds": 4.91,
+      "seconds": 3.79,
       "failed_tracks": null,
       "records": [
         {
@@ -776,8 +727,9 @@
               "count": 1,
               "form": null,
               "reported_kcal": null,
-              "est_kcal": 120.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
@@ -805,7 +757,7 @@
       "text": "又吃了一碗饭",
       "ok": true,
       "status": "ok",
-      "seconds": 5.73,
+      "seconds": 4.36,
       "failed_tracks": null,
       "records": [
         {
@@ -840,11 +792,12 @@
               "spoken_name": "一碗饭",
               "name": "米饭(代表值)",
               "grams": 150.0,
-              "count": 1,
+              "count": null,
               "form": null,
               "reported_kcal": null,
-              "est_kcal": 174.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
@@ -865,13 +818,25 @@
     },
     {
       "text": "晚饭吃了盘西红柿炒鸡蛋",
-      "ok": false,
-      "status": "partial",
-      "seconds": 5.83,
-      "failed_tracks": {
-        "eat": "UnexpectedModelBehavior: Exceeded maximum output retries (2)"
-      },
-      "records": [],
+      "ok": true,
+      "status": "ok",
+      "seconds": 4.66,
+      "failed_tracks": null,
+      "records": [
+        {
+          "record_type": "ResolvedFood",
+          "food_name": "西红柿炒鸡蛋",
+          "source": "llm_estimated",
+          "kcal": 180.0,
+          "grams": 250.0,
+          "protein": null,
+          "fat": null,
+          "cho": null,
+          "fiber": null,
+          "meal_slot": "晚餐",
+          "dish": null
+        }
+      ],
       "rounds": {
         "triage": {
           "segments": [
@@ -884,7 +849,27 @@
           ]
         },
         "eat": {
-          "error": "UnexpectedModelBehavior: Exceeded maximum output retries (2)"
+          "items": [
+            {
+              "type": "food",
+              "spoken_name": "西红柿炒鸡蛋",
+              "name": "西红柿炒鸡蛋",
+              "grams": null,
+              "count": null,
+              "form": null,
+              "reported_kcal": null,
+              "est_kcal": null,
+              "is_condiment": false,
+              "whole_dish": true,
+              "meal_slot": "晚餐"
+            }
+          ]
+        },
+        "estimate": {
+          "西红柿炒鸡蛋": {
+            "kcal": 180.0,
+            "grams": 250.0
+          }
         }
       }
     },
@@ -892,7 +877,7 @@
       "text": "喝了一杯牛奶,大概250毫升",
       "ok": true,
       "status": "ok",
-      "seconds": 4.89,
+      "seconds": 4.09,
       "failed_tracks": null,
       "records": [
         {
@@ -927,11 +912,12 @@
               "spoken_name": "牛奶",
               "name": "牛乳(代表值)",
               "grams": 250.0,
-              "count": 1,
+              "count": null,
               "form": null,
               "reported_kcal": null,
-              "est_kcal": 162.5,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
@@ -959,7 +945,7 @@
       "text": "早饭吃了两个鸡蛋",
       "ok": true,
       "status": "ok",
-      "seconds": 3.52,
+      "seconds": 3.27,
       "failed_tracks": null,
       "records": [
         {
@@ -991,14 +977,15 @@
           "items": [
             {
               "type": "food",
-              "spoken_name": "两个鸡蛋",
-              "name": "鸡蛋(代表值)",
+              "spoken_name": "鸡蛋",
+              "name": "鸡蛋（代表值）",
               "grams": 50.0,
               "count": 2,
               "form": null,
               "reported_kcal": null,
               "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "早餐"
             }
           ]
@@ -1009,15 +996,15 @@
       "text": "晚饭吃了一个 120 克的毛毛虫面包，用的是，这个毛毛虫面包用的是纯动物奶油，然后它的奶油应该占 120 克里面的感觉我也不知道该算多少",
       "ok": true,
       "status": "ok",
-      "seconds": 5.87,
+      "seconds": 6.35,
       "failed_tracks": null,
       "records": [
         {
           "record_type": "ResolvedFood",
-          "food_name": "面包(代表值)",
+          "food_name": "面包（代表值）",
           "source": "llm_estimated",
-          "kcal": 200.0,
-          "grams": 80.0,
+          "kcal": 250.0,
+          "grams": 90.0,
           "protein": null,
           "fat": null,
           "cho": null,
@@ -1029,11 +1016,11 @@
           "record_type": "ResolvedFood",
           "food_name": "奶油",
           "source": "food_table",
-          "kcal": 351.6,
-          "grams": 40.0,
-          "protein": 0.3,
-          "fat": 38.8,
-          "cho": 0.4,
+          "kcal": 263.7,
+          "grams": 30.0,
+          "protein": 0.2,
+          "fat": 29.1,
+          "cho": 0.3,
           "fiber": 0.0,
           "meal_slot": "晚餐",
           "dish": "毛毛虫面包"
@@ -1059,17 +1046,17 @@
               "ingredients": [
                 {
                   "spoken_name": "面包体",
-                  "name": "面包(代表值)",
-                  "grams": 80.0,
+                  "name": "面包（代表值）",
+                  "grams": 90.0,
                   "form": null,
-                  "est_kcal": 200.0
+                  "est_kcal": 250.0
                 },
                 {
                   "spoken_name": "纯动物奶油",
                   "name": "奶油",
-                  "grams": 40.0,
+                  "grams": 30.0,
                   "form": null,
-                  "est_kcal": 160.0
+                  "est_kcal": 110.0
                 }
               ],
               "est_total_kcal": 360.0,
@@ -1079,12 +1066,12 @@
         },
         "remap": {
           "pending": {
-            "面包(代表值)": [
+            "面包（代表值）": [
               "绿鳍马面魨"
             ]
           },
           "mapping": {
-            "面包(代表值)": null
+            "面包（代表值）": null
           }
         }
       }
@@ -1093,7 +1080,7 @@
       "text": "晚上吃了炒鸡胸肉，大概250克鸡胸肉。还有100克左右的辣椒，然后还吃了还吃了，就是。大概150克生米煮成的米饭。",
       "ok": true,
       "status": "ok",
-      "seconds": 10.26,
+      "seconds": 8.36,
       "failed_tracks": null,
       "records": [
         {
@@ -1125,7 +1112,7 @@
         {
           "record_type": "ResolvedFood",
           "food_name": "菜籽油",
-          "source": "llm_estimated",
+          "source": "food_table",
           "kcal": 89.9,
           "grams": 10.0,
           "protein": 0.0,
@@ -1133,7 +1120,7 @@
           "cho": 0.0,
           "fiber": null,
           "meal_slot": "晚餐",
-          "dish": null
+          "dish": "炒鸡胸肉"
         },
         {
           "record_type": "ResolvedFood",
@@ -1145,6 +1132,19 @@
           "fat": 1.4,
           "cho": 115.8,
           "fiber": 0.9,
+          "meal_slot": "晚餐",
+          "dish": null
+        },
+        {
+          "record_type": "ResolvedFood",
+          "food_name": "菜籽油",
+          "source": "llm_estimated",
+          "kcal": 89.9,
+          "grams": 10.0,
+          "protein": 0.0,
+          "fat": 10.0,
+          "cho": 0.0,
+          "fiber": null,
           "meal_slot": "晚餐",
           "dish": null
         }
@@ -1176,13 +1176,33 @@
                 },
                 {
                   "spoken_name": "辣椒",
-                  "name": "辣椒(代表值)",
+                  "name": "辣椒（代表值）",
                   "grams": 100.0,
+                  "form": "生",
+                  "est_kcal": 25.0
+                },
+                {
+                  "spoken_name": "菜籽油",
+                  "name": "菜籽油",
+                  "grams": 10.0,
                   "form": null,
-                  "est_kcal": 22.0
+                  "est_kcal": null
                 }
               ],
               "est_total_kcal": 400.0,
+              "meal_slot": "晚餐"
+            },
+            {
+              "type": "food",
+              "spoken_name": "150克生米煮成的米饭",
+              "name": "米饭（代表值）",
+              "grams": 150.0,
+              "count": null,
+              "form": "生",
+              "reported_kcal": null,
+              "est_kcal": null,
+              "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "晚餐"
             },
             {
@@ -1195,25 +1215,14 @@
               "reported_kcal": null,
               "est_kcal": null,
               "is_condiment": true,
-              "meal_slot": "晚餐"
-            },
-            {
-              "type": "food",
-              "spoken_name": "米饭",
-              "name": "米饭(代表值)",
-              "grams": 150.0,
-              "count": 1,
-              "form": "生",
-              "reported_kcal": null,
-              "est_kcal": 174.0,
-              "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "晚餐"
             }
           ]
         },
         "remap": {
           "pending": {
-            "辣椒(代表值)": [
+            "辣椒（代表值）": [
               "辣椒油",
               "辣椒(红,小)",
               "辣椒(青、尖)",
@@ -1221,15 +1230,15 @@
               "辣椒(红,尖,干)",
               "辣椒(小红尖辣椒、干)"
             ],
-            "米饭(代表值)": [
+            "米饭（代表值）": [
               "籼米饭(蒸)",
               "粳米饭(蒸)",
               "米饭(蒸,代表值)"
             ]
           },
           "mapping": {
-            "辣椒(代表值)": "辣椒(青、尖)",
-            "米饭(代表值)": "米饭(蒸,代表值)"
+            "辣椒（代表值）": "辣椒(青、尖)",
+            "米饭（代表值）": "米饭(蒸,代表值)"
           }
         }
       }
@@ -1238,7 +1247,7 @@
       "text": "刚刚吃了大概200克的大樱桃。",
       "ok": true,
       "status": "ok",
-      "seconds": 2.71,
+      "seconds": 2.7,
       "failed_tracks": null,
       "records": [
         {
@@ -1278,6 +1287,7 @@
               "reported_kcal": null,
               "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
@@ -1288,19 +1298,19 @@
       "text": "刚刚吃了一盘辣椒炒牛肉，牛肉300克左右，然后辣椒也将近三百克。还吃了大概100克生米组成的米饭。不对，150克生米吧，组成的米饭。还吃了大概100克的包好的虾仁，水煮虾仁",
       "ok": true,
       "status": "ok",
-      "seconds": 10.58,
+      "seconds": 14.64,
       "failed_tracks": null,
       "records": [
         {
           "record_type": "ResolvedFood",
-          "food_name": "酱牛肉",
-          "source": "food_table",
-          "kcal": 738.0,
+          "food_name": "牛肉（代表值）",
+          "source": "llm_estimated",
+          "kcal": 375.0,
           "grams": 300.0,
-          "protein": 94.2,
-          "fat": 35.7,
-          "cho": 9.6,
-          "fiber": 0.0,
+          "protein": null,
+          "fat": null,
+          "cho": null,
+          "fiber": null,
           "meal_slot": null,
           "dish": "辣椒炒牛肉"
         },
@@ -1386,34 +1396,36 @@
                   "name": "辣椒（代表值）",
                   "grams": 300.0,
                   "form": "生",
-                  "est_kcal": 66.0
+                  "est_kcal": 60.0
                 }
               ],
-              "est_total_kcal": 750.0,
+              "est_total_kcal": 720.0,
               "meal_slot": null
             },
             {
               "type": "food",
               "spoken_name": "150克生米组成的米饭",
-              "name": "粳米（代表值）",
+              "name": "米饭（代表值）",
               "grams": 150.0,
               "count": null,
               "form": "生",
               "reported_kcal": null,
-              "est_kcal": 519.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             },
             {
               "type": "food",
-              "spoken_name": "水煮虾仁",
+              "spoken_name": "100克的包好的虾仁，水煮虾仁",
               "name": "虾仁（代表值）",
               "grams": 100.0,
               "count": null,
               "form": "熟",
               "reported_kcal": null,
-              "est_kcal": 99.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
@@ -1438,21 +1450,16 @@
               "辣椒(红,尖,干)",
               "辣椒(小红尖辣椒、干)"
             ],
-            "粳米（代表值）": [
-              "粳米粉",
-              "粳米粥",
-              "粳米(标一)",
-              "粳米(标三)",
-              "粳米(标二)",
-              "粳米(标四)",
-              "粳米(特等)",
-              "粳米饭(蒸)"
+            "米饭（代表值）": [
+              "籼米饭(蒸)",
+              "粳米饭(蒸)",
+              "米饭(蒸,代表值)"
             ]
           },
           "mapping": {
-            "牛肉（代表值）": "酱牛肉",
+            "牛肉（代表值）": null,
             "辣椒（代表值）": "辣椒(青、尖)",
-            "粳米（代表值）": "粳米饭(蒸)"
+            "米饭（代表值）": "粳米饭(蒸)"
           }
         }
       }
@@ -1461,12 +1468,12 @@
       "text": "刚刚吃了一个毛毛虫面包，大概总重量是120克的重量。里面有奶油，还有面包。你自己估一下比例吧",
       "ok": true,
       "status": "ok",
-      "seconds": 7.21,
+      "seconds": 8.63,
       "failed_tracks": null,
       "records": [
         {
           "record_type": "ResolvedFood",
-          "food_name": "面包(代表值)",
+          "food_name": "面包（代表值）",
           "source": "llm_estimated",
           "kcal": 200.0,
           "grams": 80.0,
@@ -1511,7 +1518,7 @@
               "ingredients": [
                 {
                   "spoken_name": "面包",
-                  "name": "面包(代表值)",
+                  "name": "面包（代表值）",
                   "grams": 80.0,
                   "form": null,
                   "est_kcal": 200.0
@@ -1531,12 +1538,12 @@
         },
         "remap": {
           "pending": {
-            "面包(代表值)": [
+            "面包（代表值）": [
               "绿鳍马面魨"
             ]
           },
           "mapping": {
-            "面包(代表值)": null
+            "面包（代表值）": null
           }
         }
       }
@@ -1545,7 +1552,7 @@
       "text": "今天吃了一碗兰州拉面。大概 450 千卡。然后晚上吃了鸡胸肉炒辣椒，然后用了大概200 克的生的鸡胸肉炒的，然后大概 200 克左右的辣椒，然后吃了大概140 克生米煮成的熟米饭。还吃了大概 80 克的带皮的鹅肉，卤鹅肉。",
       "ok": true,
       "status": "ok",
-      "seconds": 20.5,
+      "seconds": 37.85,
       "failed_tracks": null,
       "records": [
         {
@@ -1553,12 +1560,12 @@
           "food_name": "兰州拉面",
           "source": "user_reported",
           "kcal": 450.0,
-          "grams": 500.0,
+          "grams": null,
           "protein": null,
           "fat": null,
           "cho": null,
           "fiber": null,
-          "meal_slot": "午餐",
+          "meal_slot": null,
           "dish": null
         },
         {
@@ -1589,27 +1596,14 @@
         },
         {
           "record_type": "ResolvedFood",
-          "food_name": "菜籽油",
-          "source": "llm_estimated",
-          "kcal": 89.9,
-          "grams": 10.0,
-          "protein": 0.0,
-          "fat": 10.0,
-          "cho": 0.0,
-          "fiber": null,
-          "meal_slot": "晚餐",
-          "dish": null
-        },
-        {
-          "record_type": "ResolvedFood",
-          "food_name": "米饭(蒸，代表值)",
+          "food_name": "稻米(代表值)",
           "source": "food_table",
-          "kcal": 162.4,
+          "kcal": 484.4,
           "grams": 140.0,
-          "protein": 3.6,
-          "fat": 0.4,
-          "cho": 36.3,
-          "fiber": 0.4,
+          "protein": 11.1,
+          "fat": 1.3,
+          "cho": 108.1,
+          "fiber": 0.8,
           "meal_slot": "晚餐",
           "dish": null
         },
@@ -1645,13 +1639,13 @@
             {
               "type": "eat",
               "text": "然后吃了大概140 克生米煮成的熟米饭。",
-              "meal_slot": null,
+              "meal_slot": "晚餐",
               "weight_kg": null
             },
             {
               "type": "eat",
               "text": "还吃了大概 80 克的带皮的鹅肉，卤鹅肉。",
-              "meal_slot": null,
+              "meal_slot": "晚餐",
               "weight_kg": null
             }
           ]
@@ -1662,13 +1656,14 @@
               "type": "food",
               "spoken_name": "兰州拉面",
               "name": "兰州拉面",
-              "grams": 500.0,
+              "grams": null,
               "count": null,
               "form": null,
               "reported_kcal": 450.0,
               "est_kcal": null,
               "is_condiment": false,
-              "meal_slot": "午餐"
+              "whole_dish": true,
+              "meal_slot": null
             },
             {
               "type": "dish",
@@ -1677,14 +1672,14 @@
               "ingredients": [
                 {
                   "spoken_name": "鸡胸肉",
-                  "name": "鸡胸肉（代表值）",
+                  "name": "鸡胸肉",
                   "grams": 200.0,
                   "form": "生",
                   "est_kcal": 266.0
                 },
                 {
                   "spoken_name": "辣椒",
-                  "name": "辣椒（代表值）",
+                  "name": "辣椒",
                   "grams": 200.0,
                   "form": null,
                   "est_kcal": 44.0
@@ -1695,45 +1690,35 @@
             },
             {
               "type": "food",
-              "spoken_name": "菜籽油",
-              "name": "菜籽油",
-              "grams": 10.0,
-              "count": null,
-              "form": null,
-              "reported_kcal": null,
-              "est_kcal": null,
-              "is_condiment": true,
-              "meal_slot": "晚餐"
-            },
-            {
-              "type": "food",
-              "spoken_name": "熟米饭",
-              "name": "米饭（代表值）",
+              "spoken_name": "生米煮成的熟米饭",
+              "name": "米饭",
               "grams": 140.0,
               "count": null,
-              "form": "熟",
+              "form": "生",
               "reported_kcal": null,
-              "est_kcal": 162.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "晚餐"
             },
             {
               "type": "food",
-              "spoken_name": "卤鹅肉",
-              "name": "鹅（代表值）",
+              "spoken_name": "带皮的鹅肉，卤鹅肉",
+              "name": "鹅",
               "grams": 80.0,
               "count": null,
               "form": "熟",
               "reported_kcal": null,
-              "est_kcal": 201.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "晚餐"
             }
           ]
         },
         "remap": {
           "pending": {
-            "鸡胸肉（代表值）": [
+            "鸡胸肉": [
               "鸡胸脯肉",
               "火鸡胸脯肉",
               "鸡肉松",
@@ -1743,7 +1728,7 @@
               "羊肉(胸脯)",
               "鸡肝(肉鸡)"
             ],
-            "辣椒（代表值）": [
+            "辣椒": [
               "辣椒油",
               "辣椒(红,小)",
               "辣椒(青、尖)",
@@ -1751,16 +1736,16 @@
               "辣椒(红,尖,干)",
               "辣椒(小红尖辣椒、干)"
             ],
-            "米饭（代表值）": [
+            "米饭": [
               "籼米饭(蒸)",
               "粳米饭(蒸)",
               "米饭(蒸,代表值)"
             ]
           },
           "mapping": {
-            "鸡胸肉（代表值）": "鸡胸脯肉",
-            "辣椒（代表值）": "辣椒(青、尖)",
-            "米饭（代表值）": "米饭(蒸,代表值)"
+            "鸡胸肉": "鸡胸脯肉",
+            "辣椒": "辣椒(青、尖)",
+            "米饭": "米饭(蒸,代表值)"
           }
         }
       }
@@ -1769,7 +1754,7 @@
       "text": "今天的晚餐吃了140克生米煮成的熟米饭。",
       "ok": true,
       "status": "ok",
-      "seconds": 5.34,
+      "seconds": 5.15,
       "failed_tracks": null,
       "records": [
         {
@@ -1807,8 +1792,9 @@
               "count": null,
               "form": "生",
               "reported_kcal": null,
-              "est_kcal": 484.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": "晚餐"
             }
           ]
@@ -1831,7 +1817,7 @@
       "text": "下午练了90分钟:卧推40公斤5组每组5个,50公斤3组每组5个;杠铃二头弯举10公斤3组每组10个;悬垂举腿3组每组12个",
       "ok": true,
       "status": "ok",
-      "seconds": 3.92,
+      "seconds": 5.04,
       "failed_tracks": null,
       "records": [
         {
@@ -2095,7 +2081,7 @@
       "text": "刚刚喝了一杯大红袍柠檬茶，大概是它，我点的是不另外加糖，然后它显示是 17 大卡的热量，然后我又让它加了 20 克的糖。",
       "ok": true,
       "status": "ok",
-      "seconds": 7.39,
+      "seconds": 4.43,
       "failed_tracks": null,
       "records": [
         {
@@ -2115,7 +2101,7 @@
           "record_type": "ResolvedFood",
           "food_name": "白砂糖",
           "source": "llm_estimated",
-          "kcal": 80.0,
+          "kcal": 77.0,
           "grams": 20.0,
           "protein": null,
           "fat": null,
@@ -2143,11 +2129,12 @@
               "spoken_name": "大红袍柠檬茶（不另外加糖）",
               "name": "柠檬茶",
               "grams": 500.0,
-              "count": 1,
+              "count": null,
               "form": null,
               "reported_kcal": 17.0,
               "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             },
             {
@@ -2155,14 +2142,21 @@
               "spoken_name": "加的糖",
               "name": "白砂糖",
               "grams": 20.0,
-              "count": 1,
+              "count": null,
               "form": null,
               "reported_kcal": null,
-              "est_kcal": 80.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
+        },
+        "estimate": {
+          "加的糖": {
+            "kcal": 77.0,
+            "grams": 20.0
+          }
         }
       }
     },
@@ -2170,7 +2164,7 @@
       "text": "140克生米煮成的米饭",
       "ok": true,
       "status": "ok",
-      "seconds": 4.05,
+      "seconds": 3.63,
       "failed_tracks": null,
       "records": [
         {
@@ -2208,8 +2202,9 @@
               "count": null,
               "form": "生",
               "reported_kcal": null,
-              "est_kcal": 484.0,
+              "est_kcal": null,
               "is_condiment": false,
+              "whole_dish": false,
               "meal_slot": null
             }
           ]
@@ -2232,7 +2227,7 @@
       "text": "90分钟胸训,5组40kg卧推,3组50kg卧推,3组二头弯举,3组12次悬垂举腿",
       "ok": true,
       "status": "ok",
-      "seconds": 4.14,
+      "seconds": 3.86,
       "failed_tracks": null,
       "records": [
         {
@@ -2496,7 +2491,7 @@
       "text": "今天75公斤",
       "ok": true,
       "status": "ok",
-      "seconds": 1.11,
+      "seconds": 1.27,
       "failed_tracks": null,
       "records": [
         {
@@ -2521,7 +2516,7 @@
       "text": "记住一勺蛋白粉是30克120千卡",
       "ok": true,
       "status": "ok",
-      "seconds": 2.1,
+      "seconds": 2.58,
       "failed_tracks": null,
       "records": [
         {

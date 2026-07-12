@@ -330,14 +330,14 @@ def output_problems(output: ParseOutput, user_food_keys: frozenset[str]) -> list
             if lookup.find_food(item.name) is None and item.est_kcal is None:
                 problems.append(f"{item.name}: 调味不在成分表,必须补 est_kcal")
         elif isinstance(item, ParsedFood):
-            if item.reported_kcal is None and item.grams is None:
-                problems.append(f"{item.name}: 缺克数(grams)")
+            # 整菜条目(whole_dish)豁免:克数可空、不要求 est——数由干净估算调用补,
+            # 表外单品缺 est 同理不再打回(旧打回循环是"西红柿炒鸡蛋"间歇耗尽的病灶)
             if (
                 item.reported_kcal is None
-                and item.est_kcal is None
-                and _off_table_without_est(item.spoken_name, item.name, user_food_keys)
+                and item.grams is None
+                and not item.whole_dish
             ):
-                problems.append(f"{item.name}: 可能不在成分表,必须补 est_kcal 兜底")
+                problems.append(f"{item.name}: 缺克数(grams)")
         elif isinstance(item, ParsedDish):
             for ing in item.ingredients:
                 if ing.est_kcal is None and _off_table_without_est(
@@ -347,6 +347,27 @@ def output_problems(output: ParseOutput, user_food_keys: frozenset[str]) -> list
                         f"{item.dish_name}/{ing.name}: 可能不在成分表,必须补 est_kcal 兜底"
                     )
     return problems
+
+
+def needs_clean_estimate(item, user_food_keys: frozenset[str]) -> bool:
+    """该条目是否要走"干净估算"调用(2026-07-12 用户定)。
+
+    整菜条目(用户只报菜名的复合菜)必走——除非自报热量、或自定义命中且带克数;
+    普通单品仅当查表未命中且模型没给内联估算时兜底(取代旧的打回要求)。
+    调味条目自带估算,不占一次调用。
+    """
+    if not isinstance(item, ParsedFood) or item.is_condiment:
+        return False
+    if item.reported_kcal is not None:
+        return False
+    uf_hit = lookup.norm_key(item.spoken_name) in user_food_keys
+    if item.whole_dish:
+        return not (uf_hit and item.grams is not None)
+    return (
+        not uf_hit
+        and item.est_kcal is None
+        and lookup.find_food(_form_resolved_name(item.name, item.form)) is None
+    )
 
 
 # ── 克重守恒(硬校验,代码当裁判):成分和=总克重±5%,超差打回,重试不过降级 ──
@@ -656,6 +677,8 @@ async def adjudicate_names(
     for item in _iter_foods(output):
         if getattr(item, "reported_kcal", None) is not None:
             continue
+        if getattr(item, "whole_dish", False):
+            continue  # 整菜条目名字照抄菜名,走干净估算,绝不重映射到表条目
         if lookup.norm_key(item.spoken_name) in user_food_keys:
             continue  # 自定义食物按原话精确命中,轮不到裁决
         if lookup.find_food(item.name) is None:

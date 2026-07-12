@@ -76,6 +76,12 @@ class ParsedFood(BaseModel):
     is_condiment: bool = Field(
         False, description="是否为自动补的烹调油/高热量调味条目(非用户明说)"
     )
+    whole_dish: bool = Field(
+        False,
+        description="复合菜且用户没报成分时填 true:spoken_name 和 name 都照抄菜名,"
+        "绝不往成分表映射、绝不拆成分;grams 仅用户报了才填;est_kcal 不用填,"
+        "热量由系统另行估算",
+    )
     meal_slot: MealSlot | None = Field(
         None,
         description="仅当用户明说了这是哪一顿(早餐/午餐/下午茶/晚餐;夜宵、宵夜填其余)才填;没明说必须不填,由系统按时间归入",
@@ -121,6 +127,15 @@ class ParsedDish(BaseModel):
     meal_slot: MealSlot | None = Field(
         None,
         description="仅当用户明说了这是哪一顿才填;没明说必须不填",
+    )
+
+
+class CleanEstimate(BaseModel):
+    """干净估算调用的返回格(2026-07-12 用户定):像自由聊天一样估整份食物。"""
+
+    kcal: float = Field(description="这份食物的总热量(千卡),按常识估算")
+    grams: float | None = Field(
+        None, description="这份食物的总克重(克),按常识估算;不确定可不填"
     )
 
 
