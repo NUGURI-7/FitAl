@@ -287,6 +287,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "tortoise-orm", extra = ["asyncpg"] },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -305,6 +306,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.6.0" },
     { name = "tortoise-orm", extras = ["asyncpg"], specifier = ">=1.1.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+    { name = "websockets", specifier = ">=16.0" },
 ]
 
 [package.metadata.requires-dev]

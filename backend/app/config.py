@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""  # 本地部署无鉴权时留空
     LLM_EXTRA_BODY: str = ""  # 端点私有参数(JSON 字符串),如 DeepSeek 关思考模式
 
+    # ==================== 豆包流式语音识别(火山引擎 ASR,新版 API Key)====================
+    DOUBAO_ASR_API_KEY: str = ""  # 新版控制台 API Keys 页获取,只此一项必填
+    DOUBAO_ASR_RESOURCE_ID: str = "volc.seedasr.sauc.duration"  # 2.0 小时版
+    DOUBAO_ASR_WS_URL: str = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"
+
     model_config = SettingsConfigDict(
         env_file=_ENV_FILE,
         env_file_encoding="utf-8",

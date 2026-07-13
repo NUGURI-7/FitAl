@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "pydantic-ai-slim[openai]>=2.4.0",
     "bcrypt>=5.0.0",
+    "websockets>=16.0",
 ]
 
 [dependency-groups]

@@ -169,6 +169,27 @@ POST /auth/register                    # 注册(2026-07-12 契约定稿并实施
 POST /auth/login                       # 登录:{ "username", "password" } → { "token", "user_id" }
                                        # 失败统一 401"用户名或密码不对",不区分哪个错
 POST /auth/logout                      # 退出:带令牌调用,删本枚令牌(只下线本设备,幂等)
+
+WS  /voice                             # 程序内流式语音输入(2026-07-13 契约定稿):独立通道,只做
+                                       # 语音→文字,不碰记账;转出的文字前端填进输入框再走 /chat,
+                                       # 语音故障不影响记录。iOS 必做;Web 是否做后定,后端通道共用
+  认证=连上后第一条消息带令牌(浏览器 WS 改不了请求头,故不走 Authorization 头)
+  前端→后端: ①{ "type":"start", "token":"<登录令牌>" }(语言等参数后端固定,前端不传)
+             ②二进制帧:逐包裸 PCM(16000Hz/16位/单声道,pcm_s16le),约 200ms/包
+             ③{ "type":"stop" }(松手时发)
+  后端→前端(均文本 JSON):
+    { "type":"ready" }                                        # 令牌验过+豆包已连上,可以说
+    { "type":"result", "text":"到目前为止整句", "is_final":false }  # text 累计全量,前端每次覆盖显示
+    { "type":"done" }                                         # stop 收尾,整段结束
+    { "type":"error", "message":"原因" }                      # 出错(含令牌无效)随后断开;
+                                                              # 令牌无效前端按既有规则清令牌回登录页
+  后端↔豆包(火山引擎流式语音识别2.0,新版 API Key 接入):后端持 .env 的 API Key 连双向流式
+    优化版(wss .../api/v3/sauc/bigmodel_async),请求头 X-Api-Key + X-Api-Resource-Id +
+    X-Api-Request-Id + X-Api-Sequence:-1;前端裸音频→按豆包二进制协议(4字节头+大端长度+
+    gzip 载荷)转发,豆包结果→解出文字回前端;一次长按建一条连接、结束即双向关闭,
+    不做连接池、服务器零会话状态。Secret Key 此路不用
+  新增依赖:websockets(后端反向连豆包用);压缩用标准库 gzip。配置见 .env 三项
+  (DOUBAO_ASR_API_KEY / _RESOURCE_ID / _WS_URL)
 ```
 
 用户体重/身体档案由后端按登录态读取后注入 prompt,前端不传。
