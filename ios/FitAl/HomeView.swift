@@ -49,6 +49,10 @@ struct HomeView: View {
     @State private var showSettings = false
     @Namespace private var menuGlassNS
 
+    // 语音输入:点开点关,识别文字累计拼进输入框(voiceBase=本次开始前已有内容)
+    @State private var voice = VoiceInput()
+    @State private var voiceBase = ""
+
     private let minuteTick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -111,6 +115,35 @@ struct HomeView: View {
         .task { profile = try? await API.fetchUser() } // 头像球首字;失败不显示球,不打扰主链路
         .onReceive(minuteTick) { _ in
             if dayOffset == 0 { applyHero(animated: false) }
+        }
+        // 语音识别文字累计回填:拼在本次开始前已有内容之后(不自动发送)
+        .onChange(of: voice.transcript) { _, t in
+            inputText = Self.joinVoice(voiceBase, t)
+        }
+        .onChange(of: voice.errorMessage) { _, m in
+            if let m {
+                showToast(m, error: true)
+                voice.errorMessage = nil
+            }
+        }
+        .onDisappear { voice.cancel() } // 退出登录等界面切换时收掉未结束的会话
+    }
+
+    // 累加拼接:已有内容非空时,去掉尾部空白再空一格接上语音文字
+    static func joinVoice(_ base: String, _ t: String) -> String {
+        if t.isEmpty { return base }
+        guard !base.isEmpty else { return t }
+        return base.replacingOccurrences(
+            of: "\\s+$", with: "", options: .regularExpression) + " " + t
+    }
+
+    private func toggleVoice() {
+        guard !sending else { return }
+        if voice.isActive {
+            voice.stop()
+        } else {
+            voiceBase = inputText
+            voice.start()
         }
     }
 
@@ -796,17 +829,33 @@ struct HomeView: View {
                 }
             }
 
+            // 录音时:输入框上方浮一条声波,跟随说话抖动
+            if voice.isActive {
+                VoiceWave(level: voice.level, phase: voice.phase)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
-                    TextField("说一句,记一笔", text: $inputText)
+                // 底对齐:输入框随内容变高时,发送键与麦克风蹲在底部,不浮到中间
+                HStack(alignment: .bottom, spacing: 12) {
+                    TextField("说一句,记一笔", text: $inputText, axis: .vertical)
                         .font(.system(size: 15))
-                        .padding(.horizontal, 18)
+                        .lineLimit(1...5) // 随内容长高,到 5 行后框内滚动
+                        .padding(.leading, 18)
+                        .padding(.trailing, 46)
                         .padding(.vertical, 12)
-                        .glassEffect()
-                        .onSubmit { send() }
+                        .glassEffect(in: .rect(cornerRadius: 22))
 
                     SendButton(sending: sending) { send() }
                 }
+            }
+            // 麦克风盖在文本框右下角,但置于玻璃合成之外——否则会被玻璃材质糊化、颜色外扩;
+            // 距容器右缘 = 发送键(44)+ 间距(12)+ 内缩(7)
+            .overlay(alignment: .bottomTrailing) {
+                MicButton(phase: voice.phase) { toggleVoice() }
+                    .padding(.trailing, 63)
+                    .padding(.bottom, 5)
+                    .disabled(sending)
             }
         }
         .padding(.horizontal, 16)
@@ -815,6 +864,7 @@ struct HomeView: View {
         .animation(.spring(duration: 0.4), value: toast)
         .animation(.spring(duration: 0.4), value: procActive)
         .animation(.spring(duration: 0.4), value: clarify)
+        .animation(.spring(duration: 0.4), value: voice.isActive)
     }
 
     // MARK: - 头像球菜单(液态玻璃,齿轮从球里长出来;后续新功能继续往上摞球)
@@ -916,7 +966,7 @@ struct HomeView: View {
 
     private func send() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !sending else { return }
+        guard !text.isEmpty, !sending, !voice.isActive else { return }
         sending = true
         inputText = ""
         toast = nil // 旧气泡先退场,发送期间舞台交给过程面板
@@ -1039,6 +1089,86 @@ private struct Sparkline: View {
                         .position(last)
                 }
             }
+        }
+    }
+}
+
+// MARK: - 麦克风按钮:嵌在输入框右缘,点开点关;录音时橙色底+呼吸圈
+
+private struct MicButton: View {
+    let phase: VoiceInput.Phase
+    let action: () -> Void
+
+    private var active: Bool { phase != .idle }
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                // 正在听:干净的实心橙底(不加光晕,避免发虚)
+                if active {
+                    Circle().fill(Theme.burn).frame(width: 30, height: 30)
+                }
+                icon
+            }
+            .frame(width: 34, height: 34)
+            .contentShape(Circle())
+            // 三态即时切换,不被输入栏的开/关过渡带出淡入淡出
+            .transaction { $0.animation = nil }
+        }
+        .buttonStyle(PressableStyle())
+    }
+
+    @ViewBuilder private var icon: some View {
+        switch phase {
+        case .connecting, .finishing:
+            ProgressView().controlSize(.mini).tint(.white)
+        case .recording:
+            Image(systemName: "mic.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+        case .idle:
+            // 没开启:用品牌绿图标(清晰可辨,又不与右侧绿色发送圆撞)
+            Image(systemName: "mic.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.brand)
+        }
+    }
+}
+
+// MARK: - 声波条:柱高跟随音量,连续微抖显得活着(TimelineView 每帧刷新)
+
+private struct VoiceWave: View {
+    let level: Double
+    let phase: VoiceInput.Phase
+    private let weights: [Double] = [0.45, 0.75, 1, 0.85, 0.6, 0.9, 0.5]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TimelineView(.animation) { tl in
+                let t = tl.date.timeIntervalSinceReferenceDate
+                HStack(spacing: 3) {
+                    ForEach(weights.indices, id: \.self) { i in
+                        let wobble = 0.5 + 0.5 * abs(sin(t * 6 + Double(i)))
+                        Capsule()
+                            .fill(Theme.burn)
+                            .frame(width: 3, height: 3 + level * 20 * weights[i] * wobble)
+                    }
+                }
+                .frame(height: 26)
+            }
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 2)
+    }
+
+    private var label: String {
+        switch phase {
+        case .connecting: "连接中…"
+        case .finishing: "识别中…"
+        default: "正在聆听"
         }
     }
 }
