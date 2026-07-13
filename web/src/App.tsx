@@ -436,7 +436,7 @@ function App({ onLoggedOut }: { onLoggedOut: () => void }) {
         </>
       )}
 
-      <InputBar sending={sending} onSend={handleSend} />
+      <InputBar sending={sending} onSend={handleSend} onNotice={showToast} />
 
       {editing && (
         <ItemSheet

@@ -29,6 +29,12 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
 
+/** 令牌失效的统一处理(供语音等 WS 通道复用,与 HTTP 401 同路):清令牌回登录页 */
+export function forceLogout() {
+  clearAuth();
+  onUnauthorized?.();
+}
+
 function authHeaders(): Record<string, string> {
   const t = getToken();
   // 令牌只可能是 URL-safe ASCII;存储被改坏时当没登录处理,免得 fetch 在浏览器侧就炸

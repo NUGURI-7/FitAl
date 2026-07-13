@@ -18,6 +18,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+        ws: true, // 语音通道 /api/voice 走 WebSocket,需转发 upgrade
         rewrite: (p) => p.replace(/^\/api/, ''),
       },
     },
