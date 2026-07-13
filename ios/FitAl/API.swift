@@ -4,7 +4,7 @@ import Foundation
 // 开发期直连 Mac 局域网地址;后端上云后只改这一处
 // 登录改造(契约 2026-07-12):身份来自 Bearer 令牌,不再明报 user_id
 enum API {
-    static let base = URL(string: "http://192.168.10.145:8000")!
+    static let base = URL(string: "https://fital.nuguri.org")!
 
     private static let decoder: JSONDecoder = {
         let d = JSONDecoder()
