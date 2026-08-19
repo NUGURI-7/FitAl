@@ -12,7 +12,7 @@ FitAl 是一款**自然语言驱动**的健身 / 饮食记录工具。你只需�
 
 ## 在线体验
 
-**https://fital.nuguri.org**（移动端宽度设计，建议用手机打开，或在桌面浏览器里切到手机视图）
+**[https://fital.nuguri.org](https://fital.nuguri.org)** （移动端宽度设计，建议用手机打开，或在桌面浏览器里切到手机视图）
 
 演示账号：用户名 `demo1` / 密码 `demo2026`
 
