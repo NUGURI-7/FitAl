@@ -1,5 +1,9 @@
 package com.nuguri.fital.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -27,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -36,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -43,11 +49,13 @@ import androidx.compose.ui.unit.sp
 import com.nuguri.fital.data.Api
 import com.nuguri.fital.data.ChatClarify
 import com.nuguri.fital.data.ChatStatus
+import androidx.core.content.ContextCompat
 import com.nuguri.fital.data.Day
 import com.nuguri.fital.data.Dish
 import com.nuguri.fital.data.ExerciseItem
 import com.nuguri.fital.data.FoodItem
 import com.nuguri.fital.data.MealEntry
+import com.nuguri.fital.data.VoiceInput
 import com.nuguri.fital.data.WeightPoint
 import com.nuguri.fital.data.cleanFoodName
 import com.nuguri.fital.data.sourceTag
@@ -89,6 +97,13 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
     var showWeights by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var draft by remember { mutableStateOf("") }
+    val voice = remember { VoiceInput(scope) }
+    var voiceBase by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val micPermission = rememberLauncherForActivityResult(RequestPermission()) { granted ->
+        if (granted) { voiceBase = draft; voice.start() } else reply = "需要麦克风权限才能说话"
+    }
 
     /** 静默刷新:已有数据时失败不清屏,只有首屏失败才进错误态 */
     suspend fun load() {
@@ -106,6 +121,16 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
             onFailure = { if (day == null) error = it.message ?: "加载失败" },
         )
     }
+
+    LaunchedEffect(voice.transcript) {
+        if (voice.transcript.isNotEmpty()) draft = joinVoice(voiceBase, voice.transcript)
+    }
+
+    LaunchedEffect(voice.error) {
+        voice.error?.let { reply = it; voice.error = null }
+    }
+
+    DisposableEffect(Unit) { onDispose { voice.cancel() } }
 
     LaunchedEffect(dayOffset) {
         day = null
@@ -177,8 +202,25 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
             }
 
             ChatBar(
+                text = draft,
+                onTextChange = { draft = it },
                 busy = sending,
                 reply = reply,
+                recording = voice.isActive,
+                level = voice.level,
+                onMic = {
+                    if (voice.isActive) {
+                        voice.stop()
+                    } else if (
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                        == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        voiceBase = draft
+                        voice.start()
+                    } else {
+                        micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
                 above = {
                     if (procVisible) {
                         ProcessPanel(
@@ -531,6 +573,13 @@ private fun exerciseDetail(e: ExerciseItem): String = listOfNotNull(
     e.durationMin?.let { "%.1f 分钟".format(it) },
     sourceTag(e.source),
 ).joinToString(" · ").ifBlank { "—" }
+
+/** 语音文字累加拼接:已有内容非空时,去掉尾部空白再空一格接上 */
+private fun joinVoice(base: String, spoken: String): String = when {
+    spoken.isEmpty() -> base
+    base.isEmpty() -> spoken
+    else -> base.trimEnd() + " " + spoken
+}
 
 /** 数字过渡:变化时滚动到新值,不硬跳 */
 @Composable
