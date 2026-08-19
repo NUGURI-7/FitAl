@@ -113,6 +113,12 @@ object Api {
         AuthStore.save(json.decodeFromString<AuthResponse>(text).token)
     }
 
+    @Serializable private data class WeightsResponse(val weights: List<WeightPoint> = emptyList())
+
+    /** 体重曲线:默认三十天,按时间升序 */
+    suspend fun weights(days: Int = 30): List<WeightPoint> =
+        json.decodeFromString<WeightsResponse>(call("weights?days=$days")).weights
+
     /** 每日汇总:只读聚合层,零 AI 调用;date 形如 2026-08-19 */
     suspend fun day(date: String): Day = json.decodeFromString(call("days/$date"))
 

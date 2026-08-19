@@ -75,8 +75,24 @@ data class ExerciseItem(
     val source: String = "",
 )
 
+/** 体重曲线上的一点(GET /weights) */
+@Serializable
+data class WeightPoint(
+    val id: Int = 0,
+    @SerialName("weight_kg") val weightKg: Double = 0.0,
+    @SerialName("created_at") val createdAt: String = "",
+)
+
 /** 数据来源四级:用户自报 / 自定义表 / 查表 / AI 估算。只有估算需要视觉区分 */
 val String.isEstimated: Boolean get() = this == "llm_estimated"
+
+/** 来源标签:查表命中不标,其余三种如实标出 */
+fun sourceTag(source: String): String? = when (source) {
+    "llm_estimated" -> "估算"
+    "user_reported" -> "你报的"
+    "user_food" -> "自定义"
+    else -> null
+}
 
 private val JARGON = Regex("""^(代表值|特等|标[一二三四]|[Ff][Aa][Tt]\d+(\.\d+)?[gG])$""")
 
