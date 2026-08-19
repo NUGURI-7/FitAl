@@ -238,7 +238,7 @@ new 层(聚合粒度,AI+规则维护,可重算):
 | UI | Jetpack Compose + Material 3 |
 | 网络 | OkHttp(REST / SSE / WebSocket 共用一个客户端) |
 | JSON | kotlinx.serialization |
-| 令牌存储 | DataStore(加密),对应 iOS 钥匙串 |
+| 令牌存储 | DataStore,落应用私有目录(系统文件级加密 + 应用沙箱隔离);Jetpack Security 的加密偏好存储已被 Google 废弃,不使用 |
 | 图表 | Vico(Compose 原生),对应 Swift Charts |
 | 构建 | Gradle Kotlin DSL,最低 API 26 |
 
