@@ -246,6 +246,8 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                     }
                 },
                 onSend = { said ->
+                    // 还在录音时点发送:立刻收掉麦克风与语音连接,不让识别结果再回填输入框
+                    if (voice.isActive) voice.cancel()
                     sending = true
                     reply = null
                     clarify = null

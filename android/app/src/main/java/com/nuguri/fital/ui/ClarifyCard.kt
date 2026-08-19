@@ -1,6 +1,7 @@
 package com.nuguri.fital.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,13 +14,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -42,7 +43,6 @@ import com.nuguri.fital.data.ChatClarify
 import com.nuguri.fital.ui.theme.Brand
 import com.nuguri.fital.ui.theme.Burn
 import com.nuguri.fital.ui.theme.Card
-import com.nuguri.fital.ui.theme.Paper
 import com.nuguri.fital.ui.theme.TextPrimary
 import com.nuguri.fital.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
@@ -75,8 +75,8 @@ fun ClarifyCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp)
-            .shadow(8.dp, RoundedCornerShape(20.dp), spotColor = Color.Black.copy(alpha = 0.14f))
-            .clip(RoundedCornerShape(20.dp))
+            .shadow(8.dp, RoundedCornerShape(22.dp), spotColor = Color.Black.copy(alpha = 0.14f))
+            .clip(RoundedCornerShape(22.dp))
             .background(Card)
             .padding(16.dp),
     ) {
@@ -108,50 +108,70 @@ fun ClarifyCard(
             )
         }
 
-        if (clarify.minAnswers == 1 && clarify.questions.size > 1) {
-            Text(
-                "两个填一个就行",
-                fontSize = 11.sp,
-                color = TextSecondary,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-        }
-
         clarify.questions.forEach { q ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(q.prompt, fontSize = 13.sp, color = TextPrimary, maxLines = 1)
-                Spacer(Modifier.weight(1f))
-                TextField(
-                    value = values[q.key].orEmpty(),
-                    onValueChange = { values[q.key] = it },
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Brand,
-                        textAlign = TextAlign.End,
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Paper,
-                        unfocusedContainerColor = Paper,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.width(96.dp).height(48.dp),
+                Text(
+                    q.prompt,
+                    fontSize = 13.sp,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(6.dp))
-                Text(q.unit, fontSize = 12.sp, color = TextSecondary)
+                Spacer(Modifier.width(8.dp))
+                val box = RoundedCornerShape(10.dp)
+                Box(
+                    modifier = Modifier
+                        .width(78.dp)
+                        .shadow(3.dp, box, spotColor = Color.Black.copy(alpha = 0.10f))
+                        .background(Card, box)
+                        .border(1.dp, Color.Black.copy(alpha = 0.14f), box)
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    BasicTextField(
+                        value = values[q.key].orEmpty(),
+                        onValueChange = { values[q.key] = it },
+                        enabled = !submitting,
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Brand,
+                            textAlign = TextAlign.End,
+                        ),
+                        cursorBrush = SolidColor(Brand),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                // 单位列定宽:「个」和「分钟」不一样长,不定宽会把上下两行的输入框推成不同位置
+                Text(
+                    q.unit,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.width(32.dp),
+                )
             }
+        }
+
+        if (clarify.minAnswers == 1 && clarify.questions.size > 1) {
+            Text(
+                "填其中一项即可",
+                fontSize = 11.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
 
         errorMsg?.let {
             Text(it, fontSize = 12.sp, color = Burn, modifier = Modifier.padding(top = 8.dp))
         }
+
+        Spacer(Modifier.height(12.dp))
 
         Button(
             onClick = {
@@ -169,14 +189,21 @@ fun ClarifyCard(
                 }
             },
             enabled = ready && !submitting,
-            colors = ButtonDefaults.buttonColors(containerColor = Brand),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth().height(44.dp).padding(top = 0.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Brand,
+                disabledContainerColor = Brand.copy(alpha = 0.4f),
+                disabledContentColor = Color.White.copy(alpha = 0.8f),
+            ),
+            shape = RoundedCornerShape(50),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(top = 0.dp),
         ) {
             if (submitting) {
                 CircularProgressIndicator(Modifier.size(18.dp), Color.White, 2.dp)
             } else {
-                Text("补上", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("补交记上", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
