@@ -122,6 +122,14 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
         )
     }
 
+    // 回执停四秒自动收,与 iOS 同口径;期间来了新回执以新的为准
+    LaunchedEffect(reply) {
+        if (reply != null) {
+            delay(4000)
+            reply = null
+        }
+    }
+
     LaunchedEffect(voice.transcript) {
         if (voice.transcript.isNotEmpty()) draft = joinVoice(voiceBase, voice.transcript)
     }
@@ -194,11 +202,6 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                         },
                     )
                 }
-
-                GearButton(
-                    onClick = { showSettings = true },
-                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 10.dp),
-                )
             }
 
             ChatBar(
@@ -208,6 +211,7 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                 reply = reply,
                 recording = voice.isActive,
                 level = voice.level,
+                onSettings = { showSettings = true },
                 onMic = {
                     if (voice.isActive) {
                         voice.stop()

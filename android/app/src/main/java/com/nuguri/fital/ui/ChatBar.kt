@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuguri.fital.ui.theme.Brand
 import com.nuguri.fital.ui.theme.Burn
@@ -64,6 +65,7 @@ fun ChatBar(
     recording: Boolean,
     level: Float,
     onMic: () -> Unit,
+    onSettings: () -> Unit,
     onSend: (String) -> Unit,
     above: @Composable () -> Unit = {},
 ) {
@@ -85,15 +87,19 @@ fun ChatBar(
                 text = reply.orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
-                modifier = Modifier.padding(start = 12.dp, bottom = 8.dp),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
             )
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
+            GearButton(onClick = onSettings, modifier = Modifier.padding(bottom = 3.dp))
+
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                 OutlinedTextField(
                     value = text,
