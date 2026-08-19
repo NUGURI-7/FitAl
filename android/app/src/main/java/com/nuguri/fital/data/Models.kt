@@ -83,6 +83,7 @@ data class RecordPatch(
     @SerialName("duration_min") val durationMin: Double? = null,
     @SerialName("load_kg") val loadKg: Double? = null,
     val reps: Int? = null,
+    @SerialName("weight_kg") val weightKg: Double? = null,
 )
 
 /** 体重曲线上的一点(GET /weights) */

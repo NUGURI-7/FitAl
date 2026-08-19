@@ -239,7 +239,7 @@ new 层(聚合粒度,AI+规则维护,可重算):
 | 网络 | OkHttp(REST / SSE / WebSocket 共用一个客户端) |
 | JSON | kotlinx.serialization |
 | 令牌存储 | DataStore,落应用私有目录(系统文件级加密 + 应用沙箱隔离);Jetpack Security 的加密偏好存储已被 Google 废弃,不使用 |
-| 图表 | Vico(Compose 原生),对应 Swift Charts |
+| 图表 | Compose 画布自绘(全 app 只有体重一条曲线,为一张图引图表库不划算;若将来图表变多再引 Vico) |
 | 构建 | Gradle Kotlin DSL,最低 API 26 |
 
 **视觉口径**:延续既有浅色纸感体系(与 Web / iOS 同一套观感),Material 3 只作组件基座,**不使用 M3 默认配色与动态取色**;**不仿 iOS 液态玻璃**——Android 无等价能力,硬仿必然显廉价,改用纸感卡片 + 柔影表达层次。图标用 Material Symbols,不用 emoji(沿用既有约定)。

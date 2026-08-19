@@ -82,6 +82,7 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
     var statusText by remember { mutableStateOf<String?>(null) }
     var reply by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Selected?>(null) }
+    var showWeights by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     /** 静默刷新:已有数据时失败不清屏,只有首屏失败才进错误态 */
@@ -143,6 +144,7 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                         appeared = appeared,
                         onLogout = { scope.launch { Api.logout(); onLoggedOut() } },
                         onSelect = { selected = it },
+                        onOpenWeights = { showWeights = true },
                         onDeleteDish = { dish ->
                             scope.launch {
                                 // 菜不是实体,整删=逐条删成分(raw 是唯一事实源)
@@ -174,6 +176,14 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                         statusText = null
                     }
                 },
+            )
+        }
+
+        if (showWeights) {
+            WeightSheet(
+                weights = weights,
+                onDismiss = { showWeights = false },
+                onChanged = { scope.launch { load() } },
             )
         }
 
@@ -265,6 +275,7 @@ private fun DayContent(
     appeared: Boolean,
     onLogout: () -> Unit,
     onSelect: (Selected) -> Unit,
+    onOpenWeights: () -> Unit,
     onDeleteDish: (Dish) -> Unit,
 ) {
     val metrics = remember(day, weights) { Metrics.of(day, weights) }
@@ -315,7 +326,7 @@ private fun DayContent(
                     unit = "kg",
                     sub = metrics.weightSub,
                     color = Weight,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    modifier = Modifier.weight(1f).fillMaxHeight().clickable(onClick = onOpenWeights),
                     accessory = { Sparkline(weights.map { it.weightKg }, Weight) },
                 )
             }
