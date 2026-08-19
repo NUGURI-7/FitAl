@@ -25,6 +25,8 @@ android {
             optimization {
                 enable = false
             }
+            // 不上架、调试签名直装(契约「分发」一节);正式签名等真要上架再说
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
