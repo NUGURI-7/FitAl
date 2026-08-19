@@ -226,6 +226,39 @@ new 层(聚合粒度,AI+规则维护,可重算):
 - `invite_codes`:code(唯一)/ used_by(可空,被谁消耗)/ created_at / used_at(可空)。一人一码用完作废;生成=管理员脚本直插
 - `auth_tokens`:token(唯一索引)/ user / created_at。纯随机不透明令牌,长期有效,删行即失效;行数=登录次数(非请求次数),本项目盘子内几十行封顶
 
+## 安卓端契约(2026-08-18 定稿,待实施)
+
+**定位**:与 iOS 同级的原生端,不是移植也不是套壳。界面代码不跨端复用(沿用既有约定),后端契约完全复用现有 REST + SSE + WebSocket,**后端零改动**。目录 `android/`,与 `ios/` 平级,依赖独立管理。
+
+**技术栈**:
+
+| 层 | 选型 |
+|---|---|
+| 语言 | Kotlin |
+| UI | Jetpack Compose + Material 3 |
+| 网络 | OkHttp(REST / SSE / WebSocket 共用一个客户端) |
+| JSON | kotlinx.serialization |
+| 令牌存储 | DataStore(加密),对应 iOS 钥匙串 |
+| 图表 | Vico(Compose 原生),对应 Swift Charts |
+| 构建 | Gradle Kotlin DSL,最低 API 26 |
+
+**视觉口径**:延续既有浅色纸感体系(与 Web / iOS 同一套观感),Material 3 只作组件基座,**不使用 M3 默认配色与动态取色**;**不仿 iOS 液态玻璃**——Android 无等价能力,硬仿必然显廉价,改用纸感卡片 + 柔影表达层次。图标用 Material Symbols,不用 emoji(沿用既有约定)。
+
+**语音采集**:AudioRecord 取 16000Hz / 16 位 / 单声道裸 PCM,约 200ms 一包,走既有 `WS /voice` 通道。协议层后端已封装完毕,安卓端只负责采集、运行时录音权限、连接管理。
+
+**分发**:不上架应用商店,调试签名打包 APK 直装真机。
+
+**实施顺序**(一步验收完再进下一步):
+
+1. 骨架跑通:空 app 能启动,打通后端 `/health`
+2. 登录:注册 / 登录 / 令牌存储 / 401 守卫(与 iOS 同口径)
+3. 主干:输入 → SSE 流式 → 记录卡片 → 每日汇总
+4. 设置页 + 体重曲线
+5. 语音
+6. APK 打包装真机
+
+第 1-3 步做完即为"能用的安卓端",4 之后是补完。
+
 ## 开发命令
 
 ```bash
