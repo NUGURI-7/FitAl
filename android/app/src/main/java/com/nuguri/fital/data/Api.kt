@@ -199,6 +199,35 @@ object Api {
         call("records/$kind/$id", "DELETE")
     }
 
+    @Serializable private data class UserFoodsResponse(val foods: List<UserFoodItem> = emptyList())
+    @Serializable private data class MemoriesResponse(val memories: List<MemoryItem> = emptyList())
+
+    /** 身体档案:读 */
+    suspend fun me(): UserProfile = json.decodeFromString(call("users/me"))
+
+    /** 身体档案:改。只发改动字段;改档案不回算已存记录,读时现算的数字自动按新档案计 */
+    suspend fun patchMe(patch: UserPatch) {
+        call("users/me", "PATCH", json.encodeToString(patch))
+    }
+
+    /** 自定义食物列表(按更新时间倒序) */
+    suspend fun userFoods(): List<UserFoodItem> =
+        json.decodeFromString<UserFoodsResponse>(call("user-foods")).foods
+
+    /** 删自定义食物:只影响以后查表,已存记录的数字不动 */
+    suspend fun deleteUserFood(id: Int) {
+        call("user-foods/$id", "DELETE")
+    }
+
+    /** AI 记忆列表 */
+    suspend fun memories(): List<MemoryItem> =
+        json.decodeFromString<MemoriesResponse>(call("memories")).memories
+
+    /** 删记忆:即停止注入解析提示词 */
+    suspend fun deleteMemory(id: Int) {
+        call("memories/$id", "DELETE")
+    }
+
     /** 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地 */
     suspend fun logout() {
         runCatching { call("auth/logout", "POST", kickOn401 = false) }

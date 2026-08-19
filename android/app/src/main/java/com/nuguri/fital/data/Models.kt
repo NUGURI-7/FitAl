@@ -75,6 +75,48 @@ data class ExerciseItem(
     val source: String = "",
 )
 
+/** 身体档案(GET /users/me):用户名只读不可改,其余可改 */
+@Serializable
+data class UserProfile(
+    val id: Int = 0,
+    val username: String? = null,
+    val nickname: String = "",
+    @SerialName("height_cm") val heightCm: Double = 0.0,
+    val sex: String = "male",
+    @SerialName("birth_year") val birthYear: Int = 0,
+)
+
+/** 改档案请求体:只编码改动了的字段 */
+@Serializable
+data class UserPatch(
+    val nickname: String? = null,
+    @SerialName("height_cm") val heightCm: Double? = null,
+    val sex: String? = null,
+    @SerialName("birth_year") val birthYear: Int? = null,
+) {
+    val isEmpty: Boolean
+        get() = nickname == null && heightCm == null && sex == null && birthYear == null
+}
+
+/** 自定义食物:每 100 克口径,与官方表同构 */
+@Serializable
+data class UserFoodItem(
+    val id: Int = 0,
+    val name: String = "",
+    val form: String? = null,
+    val kcal: Double = 0.0,
+    @SerialName("updated_at") val updatedAt: String = "",
+)
+
+/** AI 记忆:叫法 / 习惯 / 纠正 */
+@Serializable
+data class MemoryItem(
+    val id: Int = 0,
+    val kind: String = "",
+    val content: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
+)
+
 /** 改记录请求体:字段全部可空,只编码改动了的字段 */
 @Serializable
 data class RecordPatch(

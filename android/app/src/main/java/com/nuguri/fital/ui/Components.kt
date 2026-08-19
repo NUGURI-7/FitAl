@@ -443,3 +443,37 @@ fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
     return this.clickable(interactionSource = source, indication = null, onClick = onClick)
 }
+
+/** 设置入口:浮在纸感底上的小圆钮(安卓无液态玻璃,改用纸感圆片) */
+@Composable
+fun GearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .shadow(5.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.14f))
+            .clip(CircleShape)
+            .background(Card)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(17.dp)) {
+            val c = TextSecondary
+            val r = size.minDimension / 2f
+            val center = Offset(size.width / 2f, size.height / 2f)
+            // 六根齿 + 中间圆环
+            repeat(6) { i ->
+                val a = (Math.PI / 3f * i).toFloat()
+                val dx = kotlin.math.cos(a)
+                val dy = kotlin.math.sin(a)
+                drawLine(
+                    c,
+                    Offset(center.x + dx * r * 0.58f, center.y + dy * r * 0.58f),
+                    Offset(center.x + dx * r, center.y + dy * r),
+                    r * 0.30f,
+                    StrokeCap.Round,
+                )
+            }
+            drawCircle(c, radius = r * 0.46f, center = center, style = Stroke(width = r * 0.26f))
+        }
+    }
+}

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -86,6 +87,7 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
     var reply by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Selected?>(null) }
     var showWeights by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     /** 静默刷新:已有数据时失败不清屏,只有首屏失败才进错误态 */
@@ -110,6 +112,15 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
         error = null
         appeared = false
         load()
+    }
+
+    if (showSettings) {
+        SettingsScreen(
+            onBack = { showSettings = false },
+            onSaved = { scope.launch { load() } },
+            onLoggedOut = onLoggedOut,
+        )
+        return
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -145,7 +156,6 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                         day = day!!,
                         weights = weights,
                         appeared = appeared,
-                        onLogout = { scope.launch { Api.logout(); onLoggedOut() } },
                         onSelect = { selected = it },
                         onOpenWeights = { showWeights = true },
                         onDeleteDish = { dish ->
@@ -159,6 +169,11 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                         },
                     )
                 }
+
+                GearButton(
+                    onClick = { showSettings = true },
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 18.dp, bottom = 10.dp),
+                )
             }
 
             ChatBar(
@@ -300,7 +315,6 @@ private fun DayContent(
     day: Day,
     weights: List<WeightPoint>,
     appeared: Boolean,
-    onLogout: () -> Unit,
     onSelect: (Selected) -> Unit,
     onOpenWeights: () -> Unit,
     onDeleteDish: (Dish) -> Unit,
@@ -440,13 +454,7 @@ private fun DayContent(
             }
         }
 
-        item {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                TextButton(onClick = onLogout) {
-                    Text("退出登录", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                }
-            }
-        }
+        item { Spacer(modifier = Modifier.height(44.dp)) }
     }
 }
 
