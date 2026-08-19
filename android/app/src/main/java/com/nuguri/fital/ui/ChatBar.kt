@@ -98,7 +98,7 @@ fun ChatBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            GearButton(onClick = onSettings, modifier = Modifier.padding(bottom = 3.dp))
+            GearButton(onClick = onSettings)
 
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                 OutlinedTextField(

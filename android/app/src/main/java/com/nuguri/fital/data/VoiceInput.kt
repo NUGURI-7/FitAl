@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -52,6 +53,7 @@ class VoiceInput(private val scope: CoroutineScope) {
     private var socket: WebSocket? = null
     private var pump: Job? = null
     private var ready = false
+    private val pending = mutableListOf<ByteString>()
 
     private companion object {
         const val URL = "wss://fital.nuguri.org/voice"
@@ -69,6 +71,7 @@ class VoiceInput(private val scope: CoroutineScope) {
         transcript = ""
         level = 0f
         ready = false
+        synchronized(pending) { pending.clear() }
 
         scope.launch {
             val token = AuthStore.token()
@@ -77,6 +80,8 @@ class VoiceInput(private val scope: CoroutineScope) {
                 phase = Phase.Idle
                 return@launch
             }
+            // 先开麦再握手:握手那几百毫秒的话先攒着,连上后补发,开头不漏字
+            startPump()
             connect(token)
         }
     }
@@ -115,10 +120,7 @@ class VoiceInput(private val scope: CoroutineScope) {
                     "ready" -> {
                         ready = true
                         scope.launch {
-                            if (phase == Phase.Connecting) {
-                                phase = Phase.Recording
-                                startPump(webSocket)
-                            }
+                            if (phase == Phase.Connecting) phase = Phase.Recording
                         }
                     }
 
@@ -157,8 +159,12 @@ class VoiceInput(private val scope: CoroutineScope) {
         })
     }
 
-    /** 采集循环:每约 200 毫秒发一包裸 PCM,顺带算个音量给声波条 */
-    private fun startPump(webSocket: WebSocket) {
+    /**
+     * 采集循环:点下麦克风就开始,每约 200 毫秒攒一包裸 PCM。
+     * 握手没完成时先压进待发队列,收到 ready 后连同后续一起发,开头不丢。
+     * 音量直接写状态不切线程——每包切一次主线程会把采集挂住,挂住期间麦克风缓冲区溢出就是丢音。
+     */
+    private fun startPump() {
         pump = scope.launch(Dispatchers.IO) {
             val minBuf = AudioRecord.getMinBufferSize(
                 SAMPLE_RATE,
@@ -171,25 +177,35 @@ class VoiceInput(private val scope: CoroutineScope) {
                     SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
-                    maxOf(minBuf, PACKET_BYTES * 2),
+                    maxOf(minBuf * 4, PACKET_BYTES * 4),
                 )
             }.getOrNull()
 
             if (recorder == null || recorder.state != AudioRecord.STATE_INITIALIZED) {
                 recorder?.release()
-                withContext(Dispatchers.Main) { fail("打不开麦克风") }
+                fail("打不开麦克风")
                 return@launch
             }
 
             val buf = ByteArray(PACKET_BYTES)
             runCatching {
                 recorder.startRecording()
-                while (isActiveJob()) {
+                while (isActive) {
                     val n = recorder.read(buf, 0, buf.size)
                     if (n <= 0) continue
-                    webSocket.send(buf.copyOf(n).toByteString())
-                    val amp = peak(buf, n)
-                    withContext(Dispatchers.Main) { level = amp }
+                    val packet = buf.copyOf(n).toByteString()
+                    val ws = socket
+                    if (ready && ws != null) {
+                        drainPending(ws)
+                        ws.send(packet)
+                    } else {
+                        // 握手还没完成:先压着,最多留两秒,免得连不上时无限涨
+                        synchronized(pending) {
+                            pending += packet
+                            while (pending.size > 10) pending.removeAt(0)
+                        }
+                    }
+                    level = peak(buf, n)
                 }
             }
             runCatching { recorder.stop() }
@@ -197,14 +213,22 @@ class VoiceInput(private val scope: CoroutineScope) {
         }
     }
 
-    private fun CoroutineScope.isActiveJob() = pump?.isActive == true
+    private fun drainPending(ws: WebSocket) {
+        val queued = synchronized(pending) {
+            if (pending.isEmpty()) return
+            val copy = pending.toList()
+            pending.clear()
+            copy
+        }
+        queued.forEach { ws.send(it) }
+    }
 
     /** 取这一包的峰值,归一到 0..1 */
     private fun peak(buf: ByteArray, n: Int): Float {
         var max = 0
         var i = 0
         while (i + 1 < n) {
-            val v = abs((buf[i].toInt() and 0xFF) or (buf[i + 1].toInt() shl 8))
+            val v = abs((((buf[i + 1].toInt() shl 8) or (buf[i].toInt() and 0xFF)).toShort()).toInt())
             if (v > max) max = v
             i += 2
         }

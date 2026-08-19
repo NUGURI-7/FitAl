@@ -449,7 +449,7 @@ fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier {
 fun GearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .size(40.dp)
+            .size(46.dp)
             .shadow(5.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.14f))
             .clip(CircleShape)
             .background(Card)
