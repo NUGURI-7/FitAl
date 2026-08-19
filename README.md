@@ -38,7 +38,7 @@ FitAl 是一款**自然语言驱动**的健身 / 饮食记录工具。你只需�
 - **修正 MET 消耗模型**：以体重、身高、性别、出生年份估算基础代谢（Mifflin-St Jeor）修正 MET，消耗更贴合个体；总耗 / 净耗双存。
 - **体重曲线**：真实时间轴的体重变化趋势。
 - **流式语音输入**：点开即说，实时转写回填输入框（服务端中转，密钥不落前端）。
-- **多端**：Web（移动端宽度）+ iOS 原生（SwiftUI，液态玻璃）；后端契约对所有端通用。
+- **多端**：Web（移动端宽度）+ iOS 原生（SwiftUI，液态玻璃）+ 安卓原生（Kotlin + Compose）；三端界面代码各自独立，后端契约通用。
 
 ## AI 解析链路
 
@@ -81,6 +81,7 @@ FitAl 是一款**自然语言驱动**的健身 / 饮食记录工具。你只需�
 | 语音 | 火山引擎豆包流式语音识别 2.0（服务端中转 WebSocket，逐包 PCM） |
 | Web | React · Vite · Tailwind CSS · Lucide · ECharts |
 | iOS | SwiftUI · SF Symbols · Swift Charts · 液态玻璃（iOS 26+） |
+| 安卓 | Kotlin · Jetpack Compose · Material 3 · OkHttp · DataStore（最低 Android 8.0） |
 | 鉴权 | 邀请码注册 + 用户名密码登录 + 不透明令牌（存库，bcrypt 哈希密码） |
 | 部署 | Docker 单镜像 · Caddy（自动 HTTPS） |
 
@@ -99,6 +100,7 @@ backend/          FastAPI 后端（自包含依赖，uv 管理）
   tests/
 web/              React + Vite 前端（移动端宽度）
 ios/              SwiftUI 原生 app
+android/          Kotlin + Compose 原生 app
 docs/             产品定义与项目文档
 ```
 
@@ -128,6 +130,16 @@ cd web
 npm install
 npm run dev               # 开发期 /api 代理到本地后端
 ```
+
+### 安卓
+
+```bash
+cd android
+./gradlew assembleDebug     # 调试包，装真机调试
+./gradlew assembleRelease   # 分发包，套调试签名，直装不上架
+```
+
+产物在 `android/app/build/outputs/apk/`。安装时手机需允许「安装未知来源应用」。
 
 ## 部署
 
