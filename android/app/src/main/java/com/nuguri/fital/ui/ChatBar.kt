@@ -22,13 +22,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,15 +39,18 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nuguri.fital.ui.theme.Brand
 import com.nuguri.fital.ui.theme.Burn
 import com.nuguri.fital.ui.theme.Card
 import com.nuguri.fital.ui.theme.Paper
+import com.nuguri.fital.ui.theme.TextPrimary
 import com.nuguri.fital.ui.theme.TextSecondary
 
 /**
@@ -102,28 +104,46 @@ fun ChatBar(
         ) {
             GearButton(onClick = onSettings)
 
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = onTextChange,
-                    placeholder = { Text(if (recording) "在听……" else "说一句，记一笔") },
-                    enabled = !busy,
-                    maxLines = 4,
-                    shape = RoundedCornerShape(23.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Card,
-                        unfocusedContainerColor = Card,
-                        disabledContainerColor = Card,
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledBorderColor = Color.Transparent,
-                    ),
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.BottomEnd) {
+                // 自绘胶囊而非 Material 输入框:后者最小高度 56dp 压不下去,
+                // 会比两侧 46dp 的圆键高出一截,底对齐时圆键看着偏低。
+                val shape = RoundedCornerShape(23.dp)
+                val fieldStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp,
+                )
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .shadow(6.dp, shape, spotColor = Color.Black.copy(alpha = 0.14f))
+                        .background(Card, shape)
+                        // 单行时压到 46dp 与两侧圆键同高;文字竖直居中,字号缩放也不跑偏
                         .heightIn(min = 46.dp)
-                        .shadow(6.dp, RoundedCornerShape(23.dp), spotColor = Color.Black.copy(alpha = 0.14f)),
-                )
+                        .padding(start = 18.dp, end = 46.dp, top = 8.dp, bottom = 8.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    BasicTextField(
+                        value = text,
+                        onValueChange = onTextChange,
+                        enabled = !busy,
+                        maxLines = 4,
+                        textStyle = fieldStyle.copy(color = TextPrimary),
+                        cursorBrush = SolidColor(Brand),
+                        modifier = Modifier.fillMaxWidth(),
+                        decorationBox = { field ->
+                            if (text.isEmpty()) {
+                                Text(
+                                    text = if (recording) "在听……" else "说一句，记一笔",
+                                    style = fieldStyle,
+                                    color = TextSecondary,
+                                )
+                            }
+                            field()
+                        },
+                    )
+                }
 
+                // 贴底 6dp:单行时正好落在胶囊竖直中线,输入变高时跟着蹲底(与 iOS 同)
                 MicButton(recording = recording, level = level, onClick = onMic)
             }
 
@@ -170,7 +190,7 @@ private fun MicButton(recording: Boolean, level: Float, onClick: () -> Unit) {
 
     Box(
         modifier = Modifier
-            .padding(end = 6.dp)
+            .padding(end = 6.dp, bottom = 6.dp)
             .scale(if (recording) pulse else 1f)
             .size(34.dp)
             .clip(CircleShape)
