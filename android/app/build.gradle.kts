@@ -20,13 +20,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        // 正式签名:密钥文件与口令都在仓库外(~/.gradle/gradle.properties),绝不进 git。
+        // 别的机器上没配这四项时不建这个配置,release 退回调试签名,构建不会因此失败。
+        val storePath = providers.gradleProperty("FITAL_STORE_FILE").orNull
+        if (storePath != null && file(storePath).exists()) {
+            create("release") {
+                storeFile = file(storePath)
+                storePassword = providers.gradleProperty("FITAL_STORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("FITAL_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("FITAL_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             optimization {
                 enable = false
             }
-            // 不上架、调试签名直装(契约「分发」一节);正式签名等真要上架再说
-            signingConfig = signingConfigs.getByName("debug")
+            // 不上架应用商店,打包直装(契约「分发」一节)
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
