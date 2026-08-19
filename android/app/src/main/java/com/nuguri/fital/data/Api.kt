@@ -28,7 +28,8 @@ object Api {
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    // explicitNulls = false:改记录只发改动了的字段,没改的不出现在请求体里
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
 
     /** 对话是流式长响应,读超时另放宽到两分钟;探活/汇总等读接口仍是 10 秒 */
     private val streamClient = client.newBuilder()
@@ -167,6 +168,20 @@ object Api {
                 reply.ifBlank { "已记录" }
             }
         }
+
+    /**
+     * 改记录:只发改动的字段。
+     * 改输入量后端按规矩重算热量;直接改热量则采用用户报的数,来源转"你报的"。
+     * kind 取 food 或 exercise。
+     */
+    suspend fun patchRecord(kind: String, id: Int, patch: RecordPatch) {
+        call("records/$kind/$id", "PATCH", json.encodeToString(patch))
+    }
+
+    /** 删记录:只落 raw,所在餐次或场次由后端增量重算 */
+    suspend fun deleteRecord(kind: String, id: Int) {
+        call("records/$kind/$id", "DELETE")
+    }
 
     /** 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地 */
     suspend fun logout() {

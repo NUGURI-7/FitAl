@@ -75,6 +75,16 @@ data class ExerciseItem(
     val source: String = "",
 )
 
+/** 改记录请求体:字段全部可空,只编码改动了的字段 */
+@Serializable
+data class RecordPatch(
+    val grams: Double? = null,
+    val kcal: Double? = null,
+    @SerialName("duration_min") val durationMin: Double? = null,
+    @SerialName("load_kg") val loadKg: Double? = null,
+    val reps: Int? = null,
+)
+
 /** 体重曲线上的一点(GET /weights) */
 @Serializable
 data class WeightPoint(

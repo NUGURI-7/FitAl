@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -39,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nuguri.fital.ui.theme.Burn
 import com.nuguri.fital.ui.theme.Card
 import com.nuguri.fital.ui.theme.Paper
 import com.nuguri.fital.ui.theme.TextPrimary
@@ -289,10 +291,13 @@ fun ItemRow(
     color: Color,
     indent: Boolean = false,
     bold: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(start = if (indent) 14.dp else 0.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -315,7 +320,54 @@ fun ItemRow(
             }
         }
         Text("$kcal", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+        trailing?.let { Spacer(Modifier.width(6.dp)); it() }
     }
+}
+
+/** 展开箭头:菜行点开成分用,展开时转 180 度 */
+@Composable
+fun ExpandChevron(expanded: Boolean) {
+    val angle by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
+    Canvas(modifier = Modifier.size(18.dp).rotate(angle)) {
+        val c = TextSecondary.copy(alpha = 0.6f)
+        drawLine(c, Offset(size.width * 0.28f, size.height * 0.42f), Offset(size.width * 0.5f, size.height * 0.62f), 4f, StrokeCap.Round)
+        drawLine(c, Offset(size.width * 0.5f, size.height * 0.62f), Offset(size.width * 0.72f, size.height * 0.42f), 4f, StrokeCap.Round)
+    }
+}
+
+/** 垃圾桶小钮:菜行整删的第一击 */
+@Composable
+fun TrashButton(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.size(26.dp).clip(CircleShape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(13.dp)) {
+            val c = TextSecondary.copy(alpha = 0.5f)
+            val w = size.width
+            val h = size.height
+            drawLine(c, Offset(w * 0.12f, h * 0.22f), Offset(w * 0.88f, h * 0.22f), 3f, StrokeCap.Round)
+            drawLine(c, Offset(w * 0.22f, h * 0.22f), Offset(w * 0.30f, h * 0.92f), 3f, StrokeCap.Round)
+            drawLine(c, Offset(w * 0.78f, h * 0.22f), Offset(w * 0.70f, h * 0.92f), 3f, StrokeCap.Round)
+            drawLine(c, Offset(w * 0.30f, h * 0.92f), Offset(w * 0.70f, h * 0.92f), 3f, StrokeCap.Round)
+        }
+    }
+}
+
+/** 确认删除胶囊:两击的第二击,三秒不点自动缩回 */
+@Composable
+fun ConfirmPill(onClick: () -> Unit) {
+    Text(
+        "确认",
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(Burn)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 /** 空态卡:今天给一句怎么记的提示,往前翻的日子只说没有记录 */

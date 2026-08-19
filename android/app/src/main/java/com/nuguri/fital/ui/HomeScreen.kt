@@ -1,5 +1,6 @@
 package com.nuguri.fital.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +28,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -34,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuguri.fital.data.Api
@@ -51,6 +54,7 @@ import com.nuguri.fital.ui.theme.Burn
 import com.nuguri.fital.ui.theme.TextPrimary
 import com.nuguri.fital.ui.theme.TextSecondary
 import com.nuguri.fital.ui.theme.Weight
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -77,6 +81,7 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
     var sending by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf<String?>(null) }
     var reply by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<Selected?>(null) }
     val scope = rememberCoroutineScope()
 
     /** 静默刷新:已有数据时失败不清屏,只有首屏失败才进错误态 */
@@ -137,6 +142,16 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                         weights = weights,
                         appeared = appeared,
                         onLogout = { scope.launch { Api.logout(); onLoggedOut() } },
+                        onSelect = { selected = it },
+                        onDeleteDish = { dish ->
+                            scope.launch {
+                                // 菜不是实体,整删=逐条删成分(raw 是唯一事实源)
+                                dish.items.forEach {
+                                    runCatching { Api.deleteRecord("food", it.id) }
+                                }
+                                load()
+                            }
+                        },
                     )
                 }
             }
@@ -159,6 +174,14 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                         statusText = null
                     }
                 },
+            )
+        }
+
+        selected?.let { sel ->
+            RecordSheet(
+                selected = sel,
+                onDismiss = { selected = null },
+                onChanged = { scope.launch { load() } },
             )
         }
 
@@ -241,8 +264,19 @@ private fun DayContent(
     weights: List<WeightPoint>,
     appeared: Boolean,
     onLogout: () -> Unit,
+    onSelect: (Selected) -> Unit,
+    onDeleteDish: (Dish) -> Unit,
 ) {
     val metrics = remember(day, weights) { Metrics.of(day, weights) }
+    val expanded = remember(day.date) { mutableStateListOf<String>() }
+    var armedDish by remember(day.date) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(armedDish) {
+        if (armedDish != null) {
+            delay(3000)
+            armedDish = null
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -302,7 +336,16 @@ private fun DayContent(
                             count = meal.items.sumOf { if (it is Dish) it.items.size else 1 },
                             kcal = meal.kcalTotal.roundToInt(),
                         )
-                        meal.items.forEach { MealRows(it) }
+                        meal.items.forEach { entry ->
+                            MealRows(
+                                entry = entry,
+                                expanded = expanded,
+                                armedDish = armedDish,
+                                onArmDish = { armedDish = it },
+                                onSelect = onSelect,
+                                onDeleteDish = onDeleteDish,
+                            )
+                        }
                     }
                 }
             }
@@ -323,8 +366,14 @@ private fun DayContent(
                             count = session.items.size,
                             kcal = session.kcalTotal.roundToInt(),
                         )
-                        session.items.forEach {
-                            ItemRow(it.exerciseName, exerciseDetail(it), it.kcal.roundToInt(), Burn)
+                        session.items.forEach { item ->
+                            ItemRow(
+                                name = item.exerciseName,
+                                detail = exerciseDetail(item),
+                                kcal = item.kcal.roundToInt(),
+                                color = Burn,
+                                onClick = { onSelect(Selected.Exercise(item)) },
+                            )
                         }
                     }
                 }
@@ -341,6 +390,18 @@ private fun DayContent(
             }
         }
 
+        if (day.meals.isNotEmpty() || day.sessions.isNotEmpty()) {
+            item {
+                Text(
+                    "点明细可改可删 · 菜行可展开成分",
+                    fontSize = 11.sp,
+                    color = TextSecondary.copy(alpha = 0.7f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+
         item {
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 TextButton(onClick = onLogout) {
@@ -352,31 +413,59 @@ private fun DayContent(
 }
 
 @Composable
-private fun MealRows(entry: MealEntry) {
+private fun MealRows(
+    entry: MealEntry,
+    expanded: MutableList<String>,
+    armedDish: String?,
+    onArmDish: (String?) -> Unit,
+    onSelect: (Selected) -> Unit,
+    onDeleteDish: (Dish) -> Unit,
+) {
     when (entry) {
         is FoodItem -> ItemRow(
             name = cleanFoodName(entry.foodName),
             detail = foodDetail(entry),
             kcal = entry.kcal.roundToInt(),
             color = Brand,
+            onClick = { onSelect(Selected.Food(entry)) },
         )
 
         is Dish -> {
+            val key = "${entry.dishName}-${entry.items.firstOrNull()?.id ?: 0}"
+            val isOpen = key in expanded
+
             ItemRow(
                 name = entry.dishName,
-                detail = "${entry.totalGrams.roundToInt()} 克 · ${entry.items.size} 样",
+                detail = "${entry.totalGrams.roundToInt()} 克 · ${entry.items.size} 成分",
                 kcal = entry.kcalTotal.roundToInt(),
                 color = Brand,
                 bold = true,
+                onClick = { if (isOpen) expanded.remove(key) else expanded.add(key) },
+                trailing = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ExpandChevron(isOpen)
+                        if (armedDish == key) {
+                            ConfirmPill(onClick = { onArmDish(null); onDeleteDish(entry) })
+                        } else {
+                            TrashButton(onClick = { onArmDish(key) })
+                        }
+                    }
+                },
             )
-            entry.items.forEach {
-                ItemRow(
-                    name = cleanFoodName(it.foodName),
-                    detail = foodDetail(it),
-                    kcal = it.kcal.roundToInt(),
-                    color = Brand,
-                    indent = true,
-                )
+
+            AnimatedVisibility(visible = isOpen) {
+                Column {
+                    entry.items.forEach { f ->
+                        ItemRow(
+                            name = cleanFoodName(f.foodName),
+                            detail = foodDetail(f),
+                            kcal = f.kcal.roundToInt(),
+                            color = Brand,
+                            indent = true,
+                            onClick = { onSelect(Selected.Food(f)) },
+                        )
+                    }
+                }
             }
         }
     }
