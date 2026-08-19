@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -62,8 +61,7 @@ fun ChatBar(
                 )
             )
             .imePadding()
-            .navigationBarsPadding()
-            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 12.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
     ) {
         AnimatedVisibility(visible = status != null || reply != null) {
             Text(
@@ -85,7 +83,7 @@ fun ChatBar(
                 placeholder = { Text("说一句，记一笔") },
                 enabled = !busy,
                 maxLines = 4,
-                shape = RoundedCornerShape(26.dp),
+                shape = RoundedCornerShape(23.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Card,
                     unfocusedContainerColor = Card,
@@ -96,8 +94,8 @@ fun ChatBar(
                 ),
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 52.dp)
-                    .shadow(6.dp, RoundedCornerShape(26.dp), spotColor = Color.Black.copy(alpha = 0.14f)),
+                    .heightIn(min = 46.dp)
+                    .shadow(6.dp, RoundedCornerShape(23.dp), spotColor = Color.Black.copy(alpha = 0.14f)),
             )
 
             FilledIconButton(
@@ -113,7 +111,7 @@ fun ChatBar(
                     containerColor = Brand,
                     disabledContainerColor = Brand.copy(alpha = 0.35f),
                 ),
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier.size(46.dp),
             ) {
                 if (busy) {
                     CircularProgressIndicator(
