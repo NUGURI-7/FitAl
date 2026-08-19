@@ -456,24 +456,25 @@ fun GearButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(17.dp)) {
+        Canvas(modifier = Modifier.size(19.dp)) {
             val c = TextSecondary
-            val r = size.minDimension / 2f
             val center = Offset(size.width / 2f, size.height / 2f)
-            // 六根齿 + 中间圆环
-            repeat(6) { i ->
-                val a = (Math.PI / 3f * i).toFloat()
+            val r = size.minDimension / 2f
+            // 八颗齿:从盘沿往外支出去的短粗方块
+            repeat(8) { i ->
+                val a = (Math.PI / 4f * i).toFloat()
                 val dx = kotlin.math.cos(a)
                 val dy = kotlin.math.sin(a)
                 drawLine(
                     c,
-                    Offset(center.x + dx * r * 0.58f, center.y + dy * r * 0.58f),
-                    Offset(center.x + dx * r, center.y + dy * r),
-                    r * 0.30f,
-                    StrokeCap.Round,
+                    Offset(center.x + dx * r * 0.62f, center.y + dy * r * 0.62f),
+                    Offset(center.x + dx * r * 0.98f, center.y + dy * r * 0.98f),
+                    strokeWidth = r * 0.34f,
                 )
             }
-            drawCircle(c, radius = r * 0.46f, center = center, style = Stroke(width = r * 0.26f))
+            // 盘身,中间掏空成轴孔
+            drawCircle(c, radius = r * 0.70f, center = center)
+            drawCircle(Card, radius = r * 0.30f, center = center)
         }
     }
 }

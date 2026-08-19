@@ -80,7 +80,9 @@ fun ChatBar(
             .imePadding()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
     ) {
-        above()
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            above()
+        }
 
         AnimatedVisibility(visible = reply != null) {
             Text(
