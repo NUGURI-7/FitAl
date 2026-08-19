@@ -128,6 +128,27 @@ data class ChatStatus(
     val track: String? = null,
 )
 
+/** 澄清里的一个问题:固定=一句问话 + 数字输入框 + 单位,不做通用表单 */
+@Serializable
+data class ClarifyQuestion(
+    val key: String,
+    val prompt: String,
+    val unit: String = "",
+    val required: Boolean = false,
+)
+
+/** 澄清事件(契约 event:clarify):运动段缺数,该段挂在服务器待补 */
+@Serializable
+data class ChatClarify(
+    @SerialName("input_id") val inputId: Int,
+    val text: String = "",
+    val questions: List<ClarifyQuestion> = emptyList(),
+    @SerialName("min_answers") val minAnswers: Int = 1,
+)
+
+/** 一次发送的完整结果:模板回执 + 可能的澄清请求 */
+data class ChatOutcome(val reply: String, val clarify: ChatClarify? = null)
+
 /** 进度事件转成给用户看的一句话 */
 fun ChatStatus.display(): String = when (stage) {
     "triage" -> "正在理解这句话"

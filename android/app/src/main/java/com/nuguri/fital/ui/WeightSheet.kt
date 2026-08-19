@@ -2,8 +2,6 @@ package com.nuguri.fital.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -298,10 +296,3 @@ private fun epochOf(iso: String): Long =
 private fun parseLocal(iso: String): LocalDateTime? = runCatching {
     OffsetDateTime.parse(iso).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
 }.recoverCatching { LocalDateTime.parse(iso) }.getOrNull()
-
-/** 就地编辑的小热区:不要 Material 那圈水波,免得像按钮 */
-@Composable
-private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier {
-    val source = remember { MutableInteractionSource() }
-    return this.clickable(interactionSource = source, indication = null, onClick = onClick)
-}

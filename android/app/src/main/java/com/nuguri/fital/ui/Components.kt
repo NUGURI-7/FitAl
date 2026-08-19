@@ -5,6 +5,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -433,4 +435,11 @@ fun ChevronButton(forward: Boolean, enabled: Boolean, onClick: () -> Unit) {
             drawLine(tint, Offset(x2, size.height / 2), Offset(x1, size.height), 4.5f, StrokeCap.Round)
         }
     }
+}
+
+/** 就地编辑的小热区:不要 Material 那圈水波,免得像按钮 */
+@Composable
+fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier {
+    val source = remember { MutableInteractionSource() }
+    return this.clickable(interactionSource = source, indication = null, onClick = onClick)
 }

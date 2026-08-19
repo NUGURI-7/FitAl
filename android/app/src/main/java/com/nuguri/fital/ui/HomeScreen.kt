@@ -40,6 +40,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nuguri.fital.data.Api
+import com.nuguri.fital.data.ChatClarify
+import com.nuguri.fital.data.ChatStatus
 import com.nuguri.fital.data.Day
 import com.nuguri.fital.data.Dish
 import com.nuguri.fital.data.ExerciseItem
@@ -47,7 +49,6 @@ import com.nuguri.fital.data.FoodItem
 import com.nuguri.fital.data.MealEntry
 import com.nuguri.fital.data.WeightPoint
 import com.nuguri.fital.data.cleanFoodName
-import com.nuguri.fital.data.display
 import com.nuguri.fital.data.sourceTag
 import com.nuguri.fital.ui.theme.Brand
 import com.nuguri.fital.ui.theme.Burn
@@ -79,7 +80,9 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var appeared by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf<String?>(null) }
+    var procEvents by remember { mutableStateOf<List<ChatStatus>>(emptyList()) }
+    var procVisible by remember { mutableStateOf(false) }
+    var clarify by remember { mutableStateOf<ChatClarify?>(null) }
     var reply by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<Selected?>(null) }
     var showWeights by remember { mutableStateOf(false) }
@@ -160,20 +163,44 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
 
             ChatBar(
                 busy = sending,
-                status = statusText,
                 reply = reply,
+                above = {
+                    if (procVisible) {
+                        ProcessPanel(
+                            events = procEvents,
+                            done = !sending,
+                            onGone = { procVisible = false; procEvents = emptyList() },
+                        )
+                    }
+                    clarify?.let { c ->
+                        ClarifyCard(
+                            clarify = c,
+                            onDone = { text ->
+                                clarify = null
+                                reply = text
+                                scope.launch { load() }
+                            },
+                            onDismiss = { clarify = null },
+                        )
+                    }
+                },
                 onSend = { said ->
                     sending = true
-                    statusText = null
                     reply = null
+                    clarify = null
+                    procEvents = emptyList()
+                    procVisible = true
                     scope.launch {
-                        runCatching { Api.chat(said) { statusText = it.display() } }
+                        runCatching { Api.chat(said) { procEvents = procEvents + it } }
                             .fold(
-                                onSuccess = { reply = it; load() },
+                                onSuccess = { out ->
+                                    reply = out.reply
+                                    clarify = out.clarify
+                                    load()
+                                },
                                 onFailure = { reply = it.message ?: "发送失败" },
                             )
                         sending = false
-                        statusText = null
                     }
                 },
             )

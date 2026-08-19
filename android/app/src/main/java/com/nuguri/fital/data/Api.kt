@@ -41,6 +41,8 @@ object Api {
     @Serializable private data class LoginIn(val username: String, val password: String)
     @Serializable private data class ChatIn(val text: String)
     @Serializable private data class ReplyData(val text: String)
+    @Serializable private data class ClarifyIn(val answers: Map<String, Double>)
+    @Serializable private data class ClarifyOut(val reply: String = "已记录")
 
     @Serializable
     private data class RegisterIn(
@@ -128,7 +130,7 @@ object Api {
      * 边处理边推进度事件,处理完推一句模板回执;进度事件回调切回主线程再交给界面。
      * 记录卡片事件此处不消费——入库完直接重取当天汇总,以聚合层为准。
      */
-    suspend fun chat(text: String, onStatus: suspend (ChatStatus) -> Unit): String =
+    suspend fun chat(text: String, onStatus: suspend (ChatStatus) -> Unit): ChatOutcome =
         withContext(Dispatchers.IO) {
             val req = Request.Builder().url("$BASE/chat")
                 .apply { AuthStore.token()?.let { header("Authorization", "Bearer $it") } }
@@ -146,6 +148,7 @@ object Api {
                 val source = resp.body?.source() ?: throw ApiException("没有响应内容")
                 var event = ""
                 var reply = ""
+                var clarify: ChatClarify? = null
                 while (true) {
                     val line = source.readUtf8Line() ?: break
                     when {
@@ -161,13 +164,26 @@ object Api {
                                 "status" -> runCatching {
                                     json.decodeFromString<ChatStatus>(payload)
                                 }.getOrNull()?.let { withContext(Dispatchers.Main) { onStatus(it) } }
+
+                                "clarify" -> runCatching {
+                                    json.decodeFromString<ChatClarify>(payload)
+                                }.getOrNull()?.let { clarify = it }
                             }
                         }
                     }
                 }
-                reply.ifBlank { "已记录" }
+                ChatOutcome(reply.ifBlank { "已记录" }, clarify)
             }
         }
+
+    /**
+     * 澄清补交:答案填进服务器上的待补行,重跑同套纯代码校验后入库,零 AI 二次调用。
+     * 已补过或不在待补态回 409,界面按"这条已经处理过了"收起。
+     */
+    suspend fun submitClarify(inputId: Int, answers: Map<String, Double>): String {
+        val text = call("inputs/$inputId/clarify", "POST", json.encodeToString(ClarifyIn(answers)))
+        return runCatching { json.decodeFromString<ClarifyOut>(text).reply }.getOrDefault("已记录")
+    }
 
     /**
      * 改记录:只发改动的字段。

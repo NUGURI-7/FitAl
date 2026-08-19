@@ -46,9 +46,9 @@ import com.nuguri.fital.ui.theme.TextSecondary
 @Composable
 fun ChatBar(
     busy: Boolean,
-    status: String?,
     reply: String?,
     onSend: (String) -> Unit,
+    above: @Composable () -> Unit = {},
 ) {
     var text by remember { mutableStateOf("") }
 
@@ -63,11 +63,13 @@ fun ChatBar(
             .imePadding()
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 6.dp),
     ) {
-        AnimatedVisibility(visible = status != null || reply != null) {
+        above()
+
+        AnimatedVisibility(visible = reply != null) {
             Text(
-                text = status ?: reply.orEmpty(),
+                text = reply.orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
-                color = if (status != null) Brand else TextSecondary,
+                color = TextSecondary,
                 modifier = Modifier.padding(start = 12.dp, bottom = 8.dp),
             )
         }
