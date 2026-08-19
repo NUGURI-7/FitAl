@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -317,10 +318,67 @@ fun ItemRow(
     }
 }
 
-/** 空态:不摆插画,一句话就够 */
+/** 空态卡:今天给一句怎么记的提示,往前翻的日子只说没有记录 */
 @Composable
-fun EmptyHint(text: String) {
-    Box(modifier = Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+fun EmptyCard(isToday: Boolean, brand: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(8.dp, RoundedCornerShape(24.dp), spotColor = Color.Black.copy(alpha = 0.12f))
+            .clip(RoundedCornerShape(24.dp))
+            .background(Card)
+            .padding(vertical = 44.dp, horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Canvas(modifier = Modifier.size(26.dp)) {
+            // 一片叶子:两条相对的弧
+            val leaf = Path().apply {
+                moveTo(size.width * 0.12f, size.height * 0.88f)
+                cubicTo(
+                    size.width * 0.10f, size.height * 0.30f,
+                    size.width * 0.45f, size.height * 0.06f,
+                    size.width * 0.92f, size.height * 0.12f,
+                )
+                cubicTo(
+                    size.width * 0.96f, size.height * 0.62f,
+                    size.width * 0.66f, size.height * 0.94f,
+                    size.width * 0.12f, size.height * 0.88f,
+                )
+                close()
+            }
+            drawPath(leaf, brand.copy(alpha = 0.5f))
+        }
+        Text(
+            if (isToday) "今天还没有记录" else "这一天没有记录",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextPrimary,
+        )
+        if (isToday) {
+            Text("在下面说一句就好，比如：吃了一个苹果", fontSize = 12.sp, color = TextSecondary)
+        }
+    }
+}
+
+/** 圆形小钮:日期左右翻页用 */
+@Composable
+fun ChevronButton(forward: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val tint = if (enabled) TextPrimary else TextSecondary.copy(alpha = 0.35f)
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .shadow(if (enabled) 4.dp else 0.dp, CircleShape, spotColor = Color.Black.copy(alpha = 0.10f))
+            .clip(CircleShape)
+            .background(Card)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(12.dp)) {
+            val x1 = if (forward) size.width * 0.28f else size.width * 0.72f
+            val x2 = if (forward) size.width * 0.68f else size.width * 0.32f
+            drawLine(tint, Offset(x1, 0f), Offset(x2, size.height / 2), 4.5f, StrokeCap.Round)
+            drawLine(tint, Offset(x2, size.height / 2), Offset(x1, size.height), 4.5f, StrokeCap.Round)
+        }
     }
 }

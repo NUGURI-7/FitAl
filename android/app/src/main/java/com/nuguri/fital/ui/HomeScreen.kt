@@ -14,7 +14,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nuguri.fital.data.Api
 import com.nuguri.fital.data.Day
 import com.nuguri.fital.data.Dish
@@ -45,11 +52,14 @@ import com.nuguri.fital.ui.theme.TextPrimary
 import com.nuguri.fital.ui.theme.TextSecondary
 import com.nuguri.fital.ui.theme.Weight
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -57,7 +67,9 @@ import kotlin.math.roundToInt
 /** 首页:只读聚合层,后端已算好合计,前端只做展示口径的换算 */
 @Composable
 fun HomeScreen(onLoggedOut: () -> Unit) {
-    val today = remember { LocalDate.now().toString() }
+    var dayOffset by remember { mutableStateOf(0) }
+    var showCalendar by remember { mutableStateOf(false) }
+    val shownDate = remember(dayOffset) { LocalDate.now().plusDays(dayOffset.toLong()) }
     var day by remember { mutableStateOf<Day?>(null) }
     var weights by remember { mutableStateOf<List<WeightPoint>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -70,7 +82,7 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
     /** 静默刷新:已有数据时失败不清屏,只有首屏失败才进错误态 */
     suspend fun load() {
         runCatching {
-            val d = Api.day(today)
+            val d = Api.day(shownDate.toString())
             val w = runCatching { Api.weights() }.getOrDefault(emptyList())
             d to w
         }.fold(
@@ -84,12 +96,25 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
         )
     }
 
-    LaunchedEffect(Unit) { load() }
+    LaunchedEffect(dayOffset) {
+        day = null
+        error = null
+        appeared = false
+        load()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         BreathingBackground(brand = Brand, burn = Burn)
 
         Column(modifier = Modifier.fillMaxSize()) {
+            DateBar(
+                date = shownDate,
+                canGoForward = dayOffset < 0,
+                onPrev = { dayOffset -= 1 },
+                onNext = { dayOffset += 1 },
+                onPick = { showCalendar = true },
+            )
+
             Box(modifier = Modifier.weight(1f)) {
                 when {
                     day == null && error == null ->
@@ -136,6 +161,77 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
                 },
             )
         }
+
+        if (showCalendar) {
+            DatePickerSheet(
+                selected = shownDate,
+                onDismiss = { showCalendar = false },
+                onPicked = {
+                    dayOffset = ChronoUnit.DAYS.between(LocalDate.now(), it).toInt()
+                    showCalendar = false
+                },
+            )
+        }
+    }
+}
+
+/** 顶部日期条:左右翻天,点中间弹月历;不许翻到未来 */
+@Composable
+private fun DateBar(
+    date: LocalDate,
+    canGoForward: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onPick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChevronButton(forward = false, enabled = true, onClick = onPrev)
+        Column(
+            modifier = Modifier.weight(1f).clickable(onClick = onPick),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                dateTitle(date),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Text(dateSubtitle(date), fontSize = 11.sp, color = TextSecondary)
+        }
+        ChevronButton(forward = true, enabled = canGoForward, onClick = onNext)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DatePickerSheet(
+    selected: LocalDate,
+    onDismiss: () -> Unit,
+    onPicked: (LocalDate) -> Unit,
+) {
+    val todayMillis = LocalDate.now().plusDays(1)
+        .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = selected.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis < todayMillis
+        },
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let {
+                    onPicked(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate())
+                } ?: onDismiss()
+            }) { Text("好") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    ) {
+        DatePicker(state = state, title = null)
     }
 }
 
@@ -153,25 +249,6 @@ private fun DayContent(
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        if (day.date == LocalDate.now().toString()) "今天" else day.date,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                    )
-                    Text(dateSubtitle(day.date), style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                }
-                TextButton(onClick = onLogout) { Text("退出登录") }
-            }
-        }
-
         item {
             Row(
                 modifier = Modifier
@@ -255,7 +332,21 @@ private fun DayContent(
         }
 
         if (day.meals.isEmpty() && day.sessions.isEmpty()) {
-            item { EmptyHint("今天还没有记录，在下面说一句就行") }
+            item {
+                EmptyCard(
+                    isToday = day.date == LocalDate.now().toString(),
+                    brand = Brand,
+                    modifier = Modifier.entrance(appeared, 1),
+                )
+            }
+        }
+
+        item {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TextButton(onClick = onLogout) {
+                    Text("退出登录", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                }
+            }
         }
     }
 }
@@ -362,11 +453,19 @@ private data class Metrics(
     }
 }
 
+/** 标题:今天 / 昨天 / 前天 / 8月16日 */
+private fun dateTitle(date: LocalDate): String =
+    when (ChronoUnit.DAYS.between(date, LocalDate.now())) {
+        0L -> "今天"
+        1L -> "昨天"
+        2L -> "前天"
+        else -> "${date.monthValue}月${date.dayOfMonth}日"
+    }
+
 /** 副标题:7月13日 周一 */
-private fun dateSubtitle(date: String): String {
-    val d = runCatching { LocalDate.parse(date) }.getOrNull() ?: return date
-    val week = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[d.dayOfWeek.value - 1]
-    return "${d.monthValue}月${d.dayOfMonth}日 $week"
+private fun dateSubtitle(date: LocalDate): String {
+    val week = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")[date.dayOfWeek.value - 1]
+    return "${date.monthValue}月${date.dayOfMonth}日 $week"
 }
 
 /** 后端时间戳形态不定(带不带时区、带不带小数秒),两种都收,统一换算到本地时钟 */

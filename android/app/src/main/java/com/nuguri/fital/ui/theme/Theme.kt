@@ -16,7 +16,22 @@ private val PaperColorScheme = lightColorScheme(
     surface = Card,
     onSurface = TextPrimary,
     onSurfaceVariant = TextSecondary,
-    outline = TextSecondary,
+    outline = TextSecondary.copy(alpha = 0.4f),
+    outlineVariant = TextSecondary.copy(alpha = 0.2f),
+    // 容器色若不覆盖,弹层与选中态会退回 M3 默认的淡紫派生色
+    surfaceVariant = Paper,
+    onSecondary = Card,
+    secondaryContainer = Brand.copy(alpha = 0.16f),
+    onSecondaryContainer = Brand,
+    tertiaryContainer = Burn.copy(alpha = 0.16f),
+    onTertiaryContainer = Burn,
+    surfaceContainerLowest = Card,
+    surfaceContainerLow = Card,
+    surfaceContainer = Card,
+    surfaceContainerHigh = Card,
+    surfaceContainerHighest = Paper,
+    inverseSurface = TextPrimary,
+    inverseOnSurface = Paper,
 )
 
 @Composable
