@@ -38,6 +38,7 @@ import com.nuguri.fital.data.ExerciseItem
 import com.nuguri.fital.data.FoodItem
 import com.nuguri.fital.data.MealEntry
 import com.nuguri.fital.data.cleanFoodName
+import com.nuguri.fital.data.display
 import com.nuguri.fital.data.isEstimated
 import com.nuguri.fital.ui.theme.Brand
 import com.nuguri.fital.ui.theme.Burn
@@ -60,6 +61,9 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
     var day by remember { mutableStateOf<Day?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var sending by remember { mutableStateOf(false) }
+    var statusText by remember { mutableStateOf<String?>(null) }
+    var reply by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun load() {
@@ -72,27 +76,49 @@ fun HomeScreen(onLoggedOut: () -> Unit) {
 
     LaunchedEffect(Unit) { load() }
 
-    Box(modifier = Modifier.fillMaxSize().background(Paper)) {
-        when {
-            loading && day == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                CircularProgressIndicator(color = Brand)
-            }
+    Column(modifier = Modifier.fillMaxSize().background(Paper)) {
+        Box(modifier = Modifier.weight(1f)) {
+            when {
+                loading && day == null -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    CircularProgressIndicator(color = Brand)
+                }
 
-            error != null && day == null -> Column(
-                modifier = Modifier.fillMaxSize().padding(32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(error!!, style = MaterialTheme.typography.bodyLarge, color = Burn)
-                TextButton(onClick = { scope.launch { load() } }) { Text("重试") }
-            }
+                error != null && day == null -> Column(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(error!!, style = MaterialTheme.typography.bodyLarge, color = Burn)
+                    TextButton(onClick = { scope.launch { load() } }) { Text("重试") }
+                }
 
-            else -> DayContent(
-                day = day!!,
-                onRefresh = { scope.launch { load() } },
-                onLogout = { scope.launch { Api.logout(); onLoggedOut() } },
-            )
+                else -> DayContent(
+                    day = day!!,
+                    onRefresh = { scope.launch { load() } },
+                    onLogout = { scope.launch { Api.logout(); onLoggedOut() } },
+                )
+            }
         }
+
+        ChatBar(
+            busy = sending,
+            status = statusText,
+            reply = reply,
+            onSend = { said ->
+                sending = true
+                statusText = null
+                reply = null
+                scope.launch {
+                    runCatching { Api.chat(said) { statusText = it.display() } }
+                        .fold(
+                            onSuccess = { reply = it; load() },
+                            onFailure = { reply = it.message ?: "发送失败" },
+                        )
+                    sending = false
+                    statusText = null
+                }
+            },
+        )
     }
 }
 

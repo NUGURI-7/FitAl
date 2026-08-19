@@ -30,9 +30,16 @@ object Api {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    /** 对话是流式长响应,读超时另放宽到两分钟;探活/汇总等读接口仍是 10 秒 */
+    private val streamClient = client.newBuilder()
+        .readTimeout(120, TimeUnit.SECONDS)
+        .build()
+
     @Serializable private data class AuthResponse(val token: String)
     @Serializable private data class ErrorDetail(val detail: String)
     @Serializable private data class LoginIn(val username: String, val password: String)
+    @Serializable private data class ChatIn(val text: String)
+    @Serializable private data class ReplyData(val text: String)
 
     @Serializable
     private data class RegisterIn(
@@ -108,6 +115,52 @@ object Api {
 
     /** 每日汇总:只读聚合层,零 AI 调用;date 形如 2026-08-19 */
     suspend fun day(date: String): Day = json.decodeFromString(call("days/$date"))
+
+    /**
+     * 发一句话记录(契约:唯一对话入口,SSE 流式)。
+     * 边处理边推进度事件,处理完推一句模板回执;进度事件回调切回主线程再交给界面。
+     * 记录卡片事件此处不消费——入库完直接重取当天汇总,以聚合层为准。
+     */
+    suspend fun chat(text: String, onStatus: suspend (ChatStatus) -> Unit): String =
+        withContext(Dispatchers.IO) {
+            val req = Request.Builder().url("$BASE/chat")
+                .apply { AuthStore.token()?.let { header("Authorization", "Bearer $it") } }
+                .post(json.encodeToString(ChatIn(text)).toRequestBody(JSON_TYPE))
+                .build()
+
+            streamClient.newCall(req).execute().use { resp ->
+                if (resp.code == 401) {
+                    AuthStore.clear()
+                    AuthStore.unauthorized.tryEmit(Unit)
+                    throw ApiException("登录已失效,请重新登录")
+                }
+                if (!resp.isSuccessful) throw ApiException("发送失败(${resp.code})")
+
+                val source = resp.body?.source() ?: throw ApiException("没有响应内容")
+                var event = ""
+                var reply = ""
+                while (true) {
+                    val line = source.readUtf8Line() ?: break
+                    when {
+                        line.startsWith("event:") -> event = line.removePrefix("event:").trim()
+                        line.startsWith("data:") -> {
+                            val payload = line.removePrefix("data:").trim()
+                            if (payload.isEmpty()) continue
+                            when (event) {
+                                "reply" -> runCatching {
+                                    json.decodeFromString<ReplyData>(payload).text
+                                }.getOrNull()?.let { reply = it }
+
+                                "status" -> runCatching {
+                                    json.decodeFromString<ChatStatus>(payload)
+                                }.getOrNull()?.let { withContext(Dispatchers.Main) { onStatus(it) } }
+                            }
+                        }
+                    }
+                }
+                reply.ifBlank { "已记录" }
+            }
+        }
 
     /** 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地 */
     suspend fun logout() {

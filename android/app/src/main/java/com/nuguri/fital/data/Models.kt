@@ -92,3 +92,21 @@ fun cleanFoodName(raw: String): String =
             .filter { it.isNotEmpty() && !JARGON.matches(it) }
         if (kept.isEmpty()) "" else "(" + kept.joinToString("，") + ")"
     }.trim()
+
+/** 对话处理进度(契约 event:status):纯增量,老客户端忽略不坏 */
+@Serializable
+data class ChatStatus(
+    val stage: String = "",
+    val tracks: List<String>? = null,
+    val track: String? = null,
+)
+
+/** 进度事件转成给用户看的一句话 */
+fun ChatStatus.display(): String = when (stage) {
+    "triage" -> "正在理解这句话"
+    "extract" -> tracks?.takeIf { it.isNotEmpty() }
+        ?.let { "正在解析：" + it.joinToString("、") } ?: "正在解析"
+    "track_done" -> track?.let { "$it 解析完成" } ?: "解析完成"
+    "saving" -> "正在算数入库"
+    else -> "处理中"
+}
