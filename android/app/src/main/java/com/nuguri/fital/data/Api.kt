@@ -106,6 +106,9 @@ object Api {
         AuthStore.save(json.decodeFromString<AuthResponse>(text).token)
     }
 
+    /** 每日汇总:只读聚合层,零 AI 调用;date 形如 2026-08-19 */
+    suspend fun day(date: String): Day = json.decodeFromString(call("days/$date"))
+
     /** 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地 */
     suspend fun logout() {
         runCatching { call("auth/logout", "POST", kickOn401 = false) }
