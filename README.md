@@ -22,7 +22,7 @@ FitAl 是一款**自然语言驱动**的健身 / 饮食记录工具。你只需�
 
 ## 下载安卓版
 
-**[FitAl-1.0.apk](https://github.com/NUGURI-7/FitAl/releases/latest)**（8.7 MB，需 Android 8.0 及以上）
+**[FitAl-1.0.1.apk](https://github.com/NUGURI-7/FitAl/releases/latest)**（8.7 MB，需 Android 8.0 及以上）
 
 下载后点开安装，系统提示「安装未知来源应用」时允许一次即可。不上架应用商店。
 
