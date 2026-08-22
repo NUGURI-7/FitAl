@@ -31,7 +31,7 @@ def test_优先级1_用户自报热量直接采用并算出净耗():
 
 
 def test_优先级2_自定义食物按每100克乘以克数计算():
-    uf = {"老三样": parser.UserFoodDef(name="老三样", kcal=520, protein=45)}
+    uf = {("老三样", ""): parser.UserFoodDef(name="老三样", kcal=520, protein=45)}
     [r] = _build(
         [ParsedFood(spoken_name="老三样", name="老三样", grams=50)], user_foods=uf
     )
@@ -67,7 +67,10 @@ def test_优先级4_表外食物用估算兜底():
     [r] = _build(
         [
             ParsedFood(
-                spoken_name="楼下的猪脚饭", name="楼下的猪脚饭", grams=400, est_kcal=850
+                spoken_name="楼下的猪脚饭",
+                name="楼下的猪脚饭",
+                grams=400,
+                est_kcal_per_serving=850,
             )
         ]
     )
@@ -236,8 +239,63 @@ def test_形态_非簇食物明说形态不影响正常查表():
     assert r.source == "food_table"
 
 
+def test_自定义食物_按份口径命中_份数乘每份热量():
+    """整份食物按量词命中,克数不参与计算(模型倒填的克数不可信)。"""
+    uf = {
+        ("兰州拉面", "碗"): parser.UserFoodDef(
+            name="兰州拉面", unit="碗", kcal_per_unit=550
+        )
+    }
+    [r] = _build(
+        [ParsedFood(spoken_name="兰州拉面", name="兰州拉面", unit="碗", grams=500)],
+        user_foods=uf,
+    )
+    assert r.source == "user_food"
+    assert r.kcal == 550
+    assert r.unit == "碗"
+
+
+def test_自定义食物_按份口径_两碗按数量翻倍():
+    uf = {
+        ("兰州拉面", "碗"): parser.UserFoodDef(
+            name="兰州拉面", unit="碗", kcal_per_unit=550
+        )
+    }
+    [r] = _build(
+        [
+            ParsedFood(
+                spoken_name="兰州拉面", name="兰州拉面", unit="碗", count=2, grams=500
+            )
+        ],
+        user_foods=uf,
+    )
+    assert r.kcal == 1100
+
+
+def test_自定义食物_量词对不上不命中按份条目():
+    """说"一份"而库里记的是"一碗"→ 各存各的,不归一,此处不命中。"""
+    uf = {
+        ("兰州拉面", "碗"): parser.UserFoodDef(
+            name="兰州拉面", unit="碗", kcal_per_unit=550
+        )
+    }
+    [r] = _build(
+        [
+            ParsedFood(
+                spoken_name="兰州拉面",
+                name="兰州拉面",
+                unit="份",
+                grams=500,
+                est_kcal_per_serving=600,
+            )
+        ],
+        user_foods=uf,
+    )
+    assert r.source == "llm_estimated"
+
+
 def test_自定义食物_原话叫法命中优先于标准表映射():
-    uf = {"老三样": parser.UserFoodDef(name="老三样", kcal=520)}
+    uf = {("老三样", ""): parser.UserFoodDef(name="老三样", kcal=520)}
     [r] = _build(
         [ParsedFood(spoken_name="老三样", name="鸡胸脯肉", grams=100)], user_foods=uf
     )
@@ -342,7 +400,9 @@ def test_干净估算_整菜条目必走_报了热量或自定义带克数则不
 def test_干净估算_表内单品与带内联估算的表外单品都不走():
     table_hit = ParsedFood(spoken_name="鸡胸肉", name="鸡胸脯肉", grams=200)
     assert not parser.needs_clean_estimate(table_hit, frozenset())
-    with_est = ParsedFood(spoken_name="柠檬茶", name="柠檬茶", grams=400, est_kcal=120)
+    with_est = ParsedFood(
+        spoken_name="柠檬茶", name="柠檬茶", grams=400, est_kcal_per_serving=120
+    )
     assert not parser.needs_clean_estimate(with_est, frozenset())
     no_est = ParsedFood(spoken_name="柠檬茶", name="柠檬茶", grams=400)
     assert parser.needs_clean_estimate(no_est, frozenset())  # 表外又没估算,兜底
@@ -364,7 +424,7 @@ def test_整菜条目_缺克数不打回_名字不进候选裁决():
 
 def test_整菜条目_填入估算后按估算来源建档():
     whole = _whole()
-    whole.est_kcal = 289.0  # 干净估算调用回填
+    whole.est_kcal_per_serving = 289.0  # 干净估算调用回填
     whole.grams = 250.0
     [r] = _build([whole])
     assert r.source == "llm_estimated"
@@ -399,7 +459,7 @@ def test_降级_整菜估算漏填时代码从成分求和():
     )
     food = parser.degrade_dish(dish)
     expect = round(lookup.find_food("奶油").kcal * 40 / 100 + 120.0, 1)
-    assert food.est_kcal == expect
+    assert food.est_kcal_per_serving == expect
     assert food.grams == 140.0
 
 
@@ -410,3 +470,45 @@ def test_数量格_总克数由代码相乘():
     food = parser._resolve_food(p, {})
     assert food.grams == 100.0  # 2个 × 单份50g,乘法归代码
     assert food.kcal == 139.0  # 按总克数查表
+
+
+def test_剥数量前缀_一碗大米饭剥成大米饭():
+    """模型对"一碗"稳定剥不掉,代码据已知量词确定性剥。"""
+    assert parser.strip_count_prefix("一碗大米饭", "碗") == "大米饭"
+    assert parser.strip_count_prefix("两个鸡蛋", "个") == "鸡蛋"
+    assert parser.strip_count_prefix("3根香蕉", "根") == "香蕉"
+    assert parser.strip_count_prefix("半碗米饭", "碗") == "米饭"
+
+
+def test_剥数量前缀_不误伤本来就带量词的名字():
+    assert parser.strip_count_prefix("大米饭", "碗") == "大米饭"  # 名里没量词
+    assert parser.strip_count_prefix("碗仔翅", "碗") == "碗仔翅"  # 量词开头即名字
+    assert parser.strip_count_prefix("盖浇饭", None) == "盖浇饭"  # 没量词不动
+    assert parser.strip_count_prefix("牛肉碗", "碗") == "牛肉碗"  # 量词在末尾不剥
+
+
+def test_自定义命中_一碗说法与两碗说法命中同一条():
+    """存查两边都用剥过的叫法,说"一碗"和"两碗"命中同一条。"""
+    uf = {
+        ("大米饭", "碗"): parser.UserFoodDef(
+            name="大米饭", unit="碗", kcal_per_unit=250
+        )
+    }
+    [a] = _build(
+        [
+            ParsedFood(
+                spoken_name="一碗大米饭", name="米饭(代表值)", unit="碗", grams=200
+            )
+        ],
+        user_foods=uf,
+    )
+    [b] = _build(
+        [
+            ParsedFood(
+                spoken_name="大米饭", name="米饭(代表值)", unit="碗", count=2, grams=200
+            )
+        ],
+        user_foods=uf,
+    )
+    assert (a.source, a.kcal) == ("user_food", 250)
+    assert (b.source, b.kcal) == ("user_food", 500)

@@ -178,7 +178,7 @@ def _eat_instructions() -> str:
 1. 用户自己报了热量数字 → 原样填 reported_kcal,不要改动。
 2. 每条食物给两个名字:spoken_name=用户嘴里的叫法,一字不改照抄;
    name=映射到《中国食物成分表》标准名(同类多条目优先带"(代表值)"的);
-   映射不了则 name 保留原话并填 est_kcal 兜底。
+   映射不了则 name 保留原话并填 est_kcal_per_serving 兜底。
 3. 份量:克数直接用;报了数量("两个鸡蛋""三根香蕉")→ count 填数量、grams 填**单份**
    克数,总量由代码相乘,你绝不相乘;没报数量 → grams 填该条总克数
    (个/碗/勺/把按常识换算成克);[用户记忆]里有个人单位换算(如"一勺=30克")
@@ -189,7 +189,7 @@ def _eat_instructions() -> str:
    → 追加一条独立 food(name:"菜籽油", grams:10, is_condiment:true);
    做法按常识含糖/芝麻酱/沙拉酱/蚝油/蜂蜜等高热量调味(如红烧/糖醋必有糖)
    而用户没报 → 同样各追加一条独立 food,克数按常识估,is_condiment:true,
-   并填 est_kcal(这份调味的总热量,成分表没有调味条目);
+   并填 est_kcal_per_serving(这份调味的热量,成分表没有调味条目);
    盐/醋/生抽/胡椒等低热量调味忽略不出条。纯水煮/清蒸且没提油就不补。
    用户自己报了油/调味则正常解析,不打标。
 6. 复合菜(一个菜名下天然含多种成分:炒菜/肠粉/面/盖饭/带馅面点等),分两种:
@@ -206,7 +206,7 @@ def _eat_instructions() -> str:
    b. 用户只说了菜名(至多带份数/总克重)→ 输出一条 food 并把 whole_dish 填 true:
       spoken_name 和 name 都照抄用户的菜名,绝不往成分表映射、绝不自行拆成分、
       不补油不补调味;grams 仅用户报了总克重才填,没报留空(不适用规则3的换算);
-      est_kcal 不用填,热量由系统另行估算。
+      est_kcal_per_serving 不用填,热量由系统另行估算。
    单独报的一种食材(如"200克鸡胸肉""一根香蕉""100克水煮虾仁")照旧用 food
    映射查表,不算复合菜;带重油重糖做法的(红烧X/炒X)没报成分按 b 整菜处理。
 7. 餐次归属:仅当用户明说了这是哪一顿——早餐/早饭→早餐,午餐/午饭/中饭→午餐,
@@ -260,9 +260,12 @@ def estimate_agent() -> Agent:
 
 
 async def _estimate_call(text: str, item: ParsedFood) -> CleanEstimate:
-    ask = f"用户说:{text}\n请估算其中「{item.spoken_name}」这份" + (
-        f"(用户报了约{item.grams:g}克)" if item.grams else ""
-    )
+    n = item.count or 1
+    ask = (
+        f"用户说:{text}\n"
+        f"请估算其中「{item.spoken_name}」"
+        + (f"(用户说了{n}份,只估其中一份)" if n > 1 else "这一份")
+    ) + (f"(用户报了约{item.grams:g}克)" if item.grams else "")
     return (await estimate_agent().run(ask)).output
 
 
@@ -661,7 +664,7 @@ async def parse_via_triage(
                 result.output.items.remove(item)
                 est_dump[item.spoken_name] = {"error": str(est)}
                 continue
-            item.est_kcal = est.kcal
+            item.est_kcal_per_serving = est.kcal
             if item.grams is None and est.grams:
                 item.grams = est.grams
             est_dump[item.spoken_name] = est.model_dump()

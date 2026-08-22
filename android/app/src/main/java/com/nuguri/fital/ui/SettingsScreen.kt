@@ -192,7 +192,10 @@ fun SettingsScreen(onBack: () -> Unit, onSaved: () -> Unit, onLoggedOut: () -> U
 
             SectionHeader("自定义食物")
             if (foods.isEmpty()) {
-                EmptyLine("还没有自定义食物。对话里说「记住牛肉肠粉一份 300 克 420 千卡」就会记下来。")
+                EmptyLine(
+                    "还没有自定义食物。对话里说「记住牛肉肠粉一份 300 克 420 千卡」就会记下来;" +
+                        "改过 AI 估算的热量后,也会自动记在这里。"
+                )
             } else {
                 Column(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card)
@@ -201,7 +204,7 @@ fun SettingsScreen(onBack: () -> Unit, onSaved: () -> Unit, onLoggedOut: () -> U
                     foods.forEachIndexed { i, f ->
                         ListRow(
                             title = f.name + (f.form?.let { "（$it）" } ?: ""),
-                            subtitle = "${f.kcal.toInt()} 千卡 / 100 克 · ${monthDay(f.updatedAt)}",
+                            subtitle = "${f.displayKcal.toInt()} ${f.displayUnit} · ${monthDay(f.updatedAt)}",
                             tag = null,
                             armed = armedFood == f.id,
                             onArm = { armedFood = f.id },

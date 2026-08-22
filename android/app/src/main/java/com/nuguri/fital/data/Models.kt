@@ -104,9 +104,18 @@ data class UserFoodItem(
     val id: Int = 0,
     val name: String = "",
     val form: String? = null,
-    val kcal: Double = 0.0,
+    /** 量词(碗/根/份);为空表示每100克口径 */
+    val unit: String? = null,
+    /** 每100克热量:量词为空时有值 */
+    val kcal: Double? = null,
+    /** 一个该量词多少千卡:量词有值时有值 */
+    @SerialName("kcal_per_unit") val kcalPerUnit: Double? = null,
     @SerialName("updated_at") val updatedAt: String = "",
-)
+) {
+    /** 展示用:按口径给出数值与单位后缀 */
+    val displayKcal: Double get() = (if (unit == null) kcal else kcalPerUnit) ?: 0.0
+    val displayUnit: String get() = unit?.let { "千卡 / $it" } ?: "千卡 / 100 克"
+}
 
 /** AI 记忆:叫法 / 习惯 / 纠正 */
 @Serializable

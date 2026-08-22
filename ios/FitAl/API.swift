@@ -328,10 +328,19 @@ struct UserFoodItem: Decodable, Identifiable {
     let id: Int
     let name: String
     let form: String?
-    let kcal: Double
+    /// 量词(碗/根/份);为空表示每100克口径
+    let unit: String?
+    /// 每100克热量:量词为空时有值
+    let kcal: Double?
+    /// 一个该量词多少千卡:量词有值时有值
+    let kcalPerUnit: Double?
     let updatedAt: String
 
     var at: Date { parseISOTimestamp(updatedAt) ?? .distantPast }
+
+    /// 展示用:按口径给出数值与单位后缀
+    var displayKcal: Double { (unit == nil ? kcal : kcalPerUnit) ?? 0 }
+    var displayUnit: String { unit.map { "千卡/\($0)" } ?? "千卡/100g" }
 }
 
 private struct UserFoodsResponse: Decodable { let foods: [UserFoodItem] }

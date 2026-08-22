@@ -176,9 +176,11 @@ async def chat(body: ChatIn, user: User = Depends(current_user)) -> StreamingRes
         await ExerciseRecord.filter(user=user).order_by("-created_at").first()
     )
     user_foods = {
-        lookup.norm_key(uf.name): parser.UserFoodDef(
+        (lookup.norm_key(uf.name), uf.unit): parser.UserFoodDef(
             name=uf.name,
             kcal=uf.kcal,
+            unit=uf.unit,
+            kcal_per_unit=uf.kcal_per_unit,
             protein=uf.protein,
             fat=uf.fat,
             cho=uf.cho,
@@ -206,7 +208,7 @@ async def chat(body: ChatIn, user: User = Depends(current_user)) -> StreamingRes
             pr = await pipeline.parse_via_triage(
                 body.text,
                 now=now,
-                user_food_keys=frozenset(user_foods),
+                user_food_keys=frozenset(k for k, _ in user_foods),
                 open_session=session_summary,
                 alias_memories=";".join(
                     r.content for r in memory_rows if r.kind == "alias"
@@ -436,7 +438,10 @@ async def persist_records(
                 source=r.source,
                 kcal=r.kcal,
                 food_name=r.food_name,
+                spoken_name=r.spoken_name,
                 grams=r.grams,
+                unit=r.unit,
+                unit_count=r.unit_count,
                 dish=r.dish,
                 protein=r.protein,
                 fat=r.fat,
@@ -608,6 +613,39 @@ def _exercise_desc(rec: ExerciseRecord) -> str:
     return f"{rec.exercise_name}{load}{reps}≈{rec.kcal:g}千卡"
 
 
+async def _remember_food_correction(rec: FoodRecord, was_estimated: bool) -> None:
+    """改热量 → 沉淀成个人食物库条目,下次同样的说法直接命中,不再估。
+
+    只在被改的是 AI 估算记录时沉淀(=用户给出了正确答案)。两种口径二选一:
+    有量词按份存("一碗=550千卡",克数不参与——整份食物的克数是模型倒填的);
+    无量词按每100克存(用户自己报的克数可信,可作分母)。
+    同名同量词重复改 → 按新值覆盖。
+    """
+    if not was_estimated:
+        return
+    # 用原话叫法当条目名:个人食物库是按原话精确命中的,存学名等于存了条永远查不到的
+    name = (rec.spoken_name or rec.food_name).strip()
+    if not name:
+        return
+
+    if rec.unit:
+        per_unit = round(rec.kcal / (rec.unit_count or 1), 1)
+        defaults = {"kcal_per_unit": per_unit, "kcal": None}
+        unit = rec.unit
+    elif rec.grams:
+        defaults = {"kcal": round(rec.kcal / rec.grams * 100, 1), "kcal_per_unit": None}
+        unit = ""
+    else:  # 既没量词也没克数:无从换算,不沉淀
+        return
+
+    await UserFood.update_or_create(
+        defaults={**defaults, "protein": None, "fat": None, "cho": None, "fiber": None},
+        user_id=rec.user_id,
+        name=name,
+        unit=unit,
+    )
+
+
 async def _learn_correction(user_id: int, was_estimated: bool, content: str) -> None:
     """纠正即时学:仅当用户**修改**了 AI 估算记录(=给出了正确答案)。
 
@@ -642,7 +680,6 @@ async def patch_food(
     if body.grams is None and body.kcal is None:
         raise HTTPException(422, "至少提供 grams 或 kcal 之一")
     was_estimated = rec.source == "llm_estimated"
-    old_desc = _food_desc(rec)
 
     if body.grams is not None:
         item = lookup.find_food(rec.food_name)
@@ -666,11 +703,8 @@ async def patch_food(
         rec.source = "user_reported"
     await rec.save()
 
-    await _learn_correction(
-        rec.user_id,
-        was_estimated,
-        f"用户把AI估算的「{old_desc}」修正为「{_food_desc(rec)}」",
-    )
+    if body.kcal is not None:  # 改热量=给出了正确答案 → 沉淀成可命中的条目
+        await _remember_food_correction(rec, was_estimated)
     meal = await Meal.get_or_none(id=rec.meal_id) if rec.meal_id else None
     if meal:
         await aggregate.recompute_meal(meal)
@@ -1009,7 +1043,9 @@ async def list_user_foods(user: User = Depends(current_user)) -> dict:
                 "id": r.id,
                 "name": r.name,
                 "form": r.form,
-                "kcal": r.kcal,  # 每100克
+                "kcal": r.kcal,  # 每100克(量词为空时有值)
+                "unit": r.unit or None,  # 量词:碗/根/份;空=每100克口径
+                "kcal_per_unit": r.kcal_per_unit,  # 一个该量词多少千卡
                 "protein": r.protein,
                 "fat": r.fat,
                 "cho": r.cho,

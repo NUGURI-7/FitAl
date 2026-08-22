@@ -52,10 +52,16 @@ class Profile:
 
 @dataclass(frozen=True)
 class UserFoodDef:
-    """用户自定义食物(user_foods 表的一行,每100克口径,与官方表同构)。"""
+    """用户自定义食物(user_foods 表的一行)。两种口径二选一——
+
+    量词为空:每100克口径(kcal 有值),与官方表同构;
+    量词有值:按份口径(kcal_per_unit 有值,如"一碗=550千卡"),不谈克数。
+    """
 
     name: str
-    kcal: float
+    kcal: float | None = None
+    unit: str = ""
+    kcal_per_unit: float | None = None
     protein: float | None = None
     fat: float | None = None
     cho: float | None = None
@@ -88,6 +94,9 @@ class ResolvedFood:
     fiber: float | None
     meal_slot: str | None = None  # 用户明说的餐次;空则聚合时按时钟落槽
     dish: str | None = None  # 所属菜名:拆解出的成分带同名标签;单品为空
+    unit: str | None = None  # 用户说的量词(碗/根/份);没用量词为空
+    unit_count: int | None = None  # 该量词的数量("两碗"=2);沉淀时还原单份热量
+    spoken_name: str | None = None  # 用户原话叫法;个人食物库按它命中,沉淀用它当条目名
 
 
 @dataclass
@@ -141,7 +150,7 @@ def build_records(
                         name=ing.name,
                         grams=ing.grams,
                         form=ing.form,
-                        est_kcal=ing.est_kcal,
+                        est_kcal_per_serving=ing.est_kcal,
                         meal_slot=item.meal_slot,
                     ),
                     user_foods or {},
@@ -223,7 +232,56 @@ def _form_resolved_name(name: str, form: str | None) -> str:
     return name
 
 
+# 中文数字与阿拉伯数字:剥"一碗大米饭"这类前缀用
+_NUM_CHARS = "0123456789一两二三四五六七八九十半几"
+
+
+def strip_count_prefix(spoken: str, unit: str | None) -> str:
+    """剥掉粘在叫法前面的数量+量词("一碗大米饭"→"大米饭")。
+
+    模型对"两碗/三碗"能剥干净,对"一碗"稳定剥不掉——"一碗大米饭"读起来
+    像一个整体名字。数量和量词已有独立字段,粘进叫法会让个人食物库
+    存"大米饭"、查"一碗大米饭",永远对不上。
+    量词是代码已经拿到的确定值,据它剥前缀是纯确定性操作,不问模型。
+    """
+    if not unit:
+        return spoken
+    i = spoken.find(unit)
+    if i < 0:
+        return spoken
+    head, rest = spoken[:i], spoken[i + len(unit) :]
+    # 量词前面必须真有数量词、后面还得剩下东西,才算前缀
+    # (head 为空=量词就是名字开头,如"碗仔翅",不能剥)
+    if head and rest and all(c in _NUM_CHARS for c in head):
+        return rest
+    return spoken
+
+
+def _est_total(p: ParsedFood) -> float | None:
+    """估算总热量 = 单份热量 × 份数。
+
+    与克数走同一条乘法(总克数=单份克数×份数):两个数都来自同一个"份",
+    只乘一个会让"两碗饭"记成一碗的热量。用户自报热量不走这里——
+    自报的是总量,乘了会翻倍。
+    """
+    if p.est_kcal_per_serving is None:
+        return None
+    return round(p.est_kcal_per_serving * (p.count or 1), 1)
+
+
 def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> ResolvedFood:
+    rf = _resolve_food_inner(p, user_foods)
+    # 原话叫法在出口统一带上:个人食物库按它精确命中,改热量沉淀也用它当条目名。
+    # 学名(food_name)另有其用——改克数要拿它回成分表重算,两个名字都得留。
+    rf.spoken_name = strip_count_prefix(p.spoken_name, p.unit)
+    if p.unit:  # 量词与数量成对存,沉淀时才能把"两碗"还原成"一碗"
+        rf.unit_count = p.count or 1
+    return rf
+
+
+def _resolve_food_inner(
+    p: ParsedFood, user_foods: dict[str, UserFoodDef]
+) -> ResolvedFood:
     name = _form_resolved_name(p.name, p.form)
     food_item = lookup.find_food(name)
     # 数量格:报了数量时 grams 是单份克数,总克数=数量×单份(乘法归代码)
@@ -235,7 +293,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
         kcal = (
             round(food_item.kcal * grams / 100, 1)
             if food_item
-            else (p.est_kcal or round(9 * grams, 1))
+            else (_est_total(p) or round(9 * grams, 1))
         )
         return ResolvedFood(
             food_name=name,
@@ -251,13 +309,38 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
 
     if p.reported_kcal is not None:  # 优先级1:用户自报
         return _food_record(
-            name, "user_reported", p.reported_kcal, grams, nutrition, p.meal_slot
+            name,
+            "user_reported",
+            p.reported_kcal,
+            grams,
+            nutrition,
+            p.meal_slot,
+            p.unit,
         )
 
-    # 优先级2:自定义食物——原话叫法精确命中(键归一化与官方表同规则),
-    # 每100克口径,与官方表同一算法
-    uf = user_foods.get(lookup.norm_key(p.spoken_name))
-    if uf and grams:
+    # 优先级2:自定义食物——原话叫法精确命中(键归一化与官方表同规则)。
+    # 先按份口径找(用户说了量词,如"一碗兰州拉面"):份数×每份热量,不谈克数——
+    # 整份食物的克数是模型倒填的,拿它当分母会把噪音固化进库
+    key = lookup.norm_key(strip_count_prefix(p.spoken_name, p.unit))
+    if p.unit:
+        uf_unit = user_foods.get((key, p.unit))
+        if uf_unit and uf_unit.kcal_per_unit is not None:
+            return ResolvedFood(
+                food_name=uf_unit.name,
+                source="user_food",
+                kcal=round(uf_unit.kcal_per_unit * (p.count or 1), 1),
+                grams=grams,
+                meal_slot=p.meal_slot,
+                unit=p.unit,
+                protein=None,
+                fat=None,
+                cho=None,
+                fiber=None,
+            )
+
+    # 再按每100克口径找,与官方表同一算法
+    uf = user_foods.get((key, ""))
+    if uf and uf.kcal is not None and grams:
         factor = grams / 100
         scale = lambda v: None if v is None else round(v * factor, 1)  # noqa: E731
         return ResolvedFood(
@@ -266,6 +349,7 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             kcal=round(uf.kcal * factor, 1),
             grams=grams,
             meal_slot=p.meal_slot,
+            unit=p.unit,
             protein=scale(uf.protein),
             fat=scale(uf.fat),
             cho=scale(uf.cho),
@@ -280,21 +364,27 @@ def _resolve_food(p: ParsedFood, user_foods: dict[str, UserFoodDef]) -> Resolved
             grams,
             nutrition,
             p.meal_slot,
+            p.unit,
         )
 
-    if p.est_kcal is not None:  # 优先级4:估算兜底
-        return _food_record(name, "llm_estimated", p.est_kcal, grams, None, p.meal_slot)
+    if p.est_kcal_per_serving is not None:  # 优先级4:估算兜底
+        return _food_record(
+            name, "llm_estimated", _est_total(p), grams, None, p.meal_slot, p.unit
+        )
 
     raise ValueError(f"{name}: 查表未命中且无估算值")
 
 
-def _food_record(name, source, kcal, grams, nutrition, meal_slot=None) -> ResolvedFood:
+def _food_record(
+    name, source, kcal, grams, nutrition, meal_slot=None, unit=None
+) -> ResolvedFood:
     return ResolvedFood(
         food_name=name,
         source=source,
         kcal=kcal,
         grams=grams,
         meal_slot=meal_slot,
+        unit=unit,
         protein=nutrition["protein"] if nutrition else None,
         fat=nutrition["fat"] if nutrition else None,
         cho=nutrition["cho"] if nutrition else None,
@@ -335,8 +425,13 @@ def output_problems(output: ParseOutput, user_food_keys: frozenset[str]) -> list
         elif isinstance(item, ParsedFood) and item.is_condiment:
             # 官方表没有糖/麻酱/沙拉酱类条目;表外调味必须带估算,
             # 否则会错用"油≈每克9千卡"的兜底去算糖
-            if lookup.find_food(item.name) is None and item.est_kcal is None:
-                problems.append(f"{item.name}: 调味不在成分表,必须补 est_kcal")
+            if (
+                lookup.find_food(item.name) is None
+                and item.est_kcal_per_serving is None
+            ):
+                problems.append(
+                    f"{item.name}: 调味不在成分表,必须补 est_kcal_per_serving"
+                )
         elif isinstance(item, ParsedFood):
             # 整菜条目(whole_dish)豁免:克数可空、不要求 est——数由干净估算调用补,
             # 表外单品缺 est 同理不再打回(旧打回循环是"西红柿炒鸡蛋"间歇耗尽的病灶)
@@ -373,7 +468,7 @@ def needs_clean_estimate(item, user_food_keys: frozenset[str]) -> bool:
         return not (uf_hit and item.grams is not None)
     return (
         not uf_hit
-        and item.est_kcal is None
+        and item.est_kcal_per_serving is None
         and lookup.find_food(_form_resolved_name(item.name, item.form)) is None
     )
 
@@ -468,7 +563,7 @@ def degrade_dish(dish: ParsedDish) -> ParsedFood:
         spoken_name=dish.dish_name,
         name=dish.dish_name,
         grams=dish.total_grams if dish.total_grams > 0 else None,
-        est_kcal=est,
+        est_kcal_per_serving=est,
         meal_slot=dish.meal_slot,
     )
 
@@ -494,7 +589,7 @@ def _instructions() -> str:
 2. 用户自己报了热量数字 → 原样填 reported_kcal,不要改动。
 3. 每条食物给两个名字:spoken_name=用户嘴里的叫法,一字不改照抄;
    name=映射到《中国食物成分表》标准名(同类多条目优先带"(代表值)"的);
-   映射不了则 name 保留原话并填 est_kcal 兜底。
+   映射不了则 name 保留原话并填 est_kcal_per_serving 兜底。
 4. 份量:克数直接用;个/碗/勺/把等按常识换算成克填 grams;
    [用户记忆]里有个人单位换算(如"一勺=30克")时必须优先按记忆换算。
 5. 形态 form:仅当用户明说了生/熟/干/水发/即食(含"晒干""泡发""没煮"等同义说法)才填;
@@ -503,7 +598,7 @@ def _instructions() -> str:
    → 追加一条独立 food(name:"菜籽油", grams:10, is_condiment:true);
    做法按常识含糖/芝麻酱/沙拉酱/蚝油/蜂蜜等高热量调味(如红烧/糖醋必有糖)
    而用户没报 → 同样各追加一条独立 food,克数按常识估,is_condiment:true,
-   并填 est_kcal(这份调味的总热量,成分表没有调味条目);
+   并填 est_kcal_per_serving(这份调味的热量,成分表没有调味条目);
    盐/醋/生抽/胡椒等低热量调味忽略不出条。纯水煮/清蒸且没提油就不补。
    用户自己报了油/调味则正常解析,不打标。
 7. 运动动作名先对下方 MET 表(含别名);表里没有的力量动作(有负重/组次特征)填 fallback_tier:器械或单关节孤立动作=moderate,大重量自由复合=vigorous;表外有氧才填 est_met。

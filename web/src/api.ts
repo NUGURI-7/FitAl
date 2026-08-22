@@ -347,8 +347,12 @@ export interface UserFoodItem {
   id: number;
   name: string;
   form: string | null;
-  /** 每100克热量 */
-  kcal: number;
+  /** 量词(碗/根/份);为 null 表示每100克口径 */
+  unit: string | null;
+  /** 每100克热量:量词为空时有值 */
+  kcal: number | null;
+  /** 一个该量词多少千卡:量词有值时有值 */
+  kcalPerUnit: number | null;
   updatedAt: Date;
 }
 
@@ -359,14 +363,18 @@ export async function fetchUserFoods(): Promise<UserFoodItem[]> {
       id: number;
       name: string;
       form: string | null;
-      kcal: number;
+      unit: string | null;
+      kcal: number | null;
+      kcal_per_unit: number | null;
       updated_at: string;
     }[]
   ).map((f) => ({
     id: f.id,
     name: f.name,
     form: f.form,
+    unit: f.unit,
     kcal: f.kcal,
+    kcalPerUnit: f.kcal_per_unit,
     updatedAt: new Date(f.updated_at),
   }));
 }

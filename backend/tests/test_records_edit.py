@@ -1,4 +1,4 @@
-"""修正/删除接口:重算、来源改写、聚合增量重算、纠正即时学。"""
+"""修正/删除接口:重算、来源改写、聚合增量重算、改热量沉淀进个人食物库。"""
 
 from datetime import UTC, datetime
 
@@ -6,7 +6,15 @@ import pytest
 
 from app import api
 from app.ai import aggregate
-from app.models import AiMemory, ExerciseRecord, FoodRecord, Meal, User, WeightRecord
+from app.models import (
+    AiMemory,
+    ExerciseRecord,
+    FoodRecord,
+    Meal,
+    User,
+    UserFood,
+    WeightRecord,
+)
 
 
 def _utc(hour, minute=0) -> datetime:
@@ -89,14 +97,99 @@ async def test_删AI估算条目_不产生任何记忆(db):
     assert await AiMemory.filter(user=user).count() == 0
 
 
-async def test_改AI估算条目热量_仍产生纠正记忆(db):
-    """改热量=用户给出了正确答案,这条学习路径保留不动。"""
+async def test_改热量_按克数记录_沉淀成每100克条目(db):
+    """改热量=给出了正确答案 → 进食物库,不再写中文记忆。"""
     user = await _user()
     _, rec = await _food(user, name="菜籽油", grams=10, kcal=90, source="llm_estimated")
     await api.patch_food(rec.id, api.FoodPatch(kcal=45), user)
-    [memory] = await AiMemory.filter(user=user)
-    assert memory.kind == "correction"
-    assert "菜籽油" in memory.content
+    [uf] = await UserFood.filter(user=user)
+    assert (uf.name, uf.unit) == ("菜籽油", "")
+    assert uf.kcal == 450  # 10克45千卡 → 每100克450
+    assert uf.kcal_per_unit is None
+    assert await AiMemory.filter(user=user).count() == 0
+
+
+async def test_改热量_沉淀用原话叫法而非成分表学名(db):
+    """个人食物库按原话精确命中,存学名等于存了条永远查不到的。"""
+    user = await _user()
+    _, rec = await _food(
+        user, name="米饭(代表值)", grams=600, kcal=696, source="llm_estimated"
+    )
+    rec.spoken_name, rec.unit, rec.unit_count = "大米饭", "碗", 3
+    await rec.save()
+    await api.patch_food(rec.id, api.FoodPatch(kcal=700), user)
+    [uf] = await UserFood.filter(user=user)
+    assert uf.name == "大米饭"  # 不是"米饭(代表值)"
+    assert uf.kcal_per_unit == 233.3
+
+
+async def test_改热量_没存原话叫法时退回学名(db):
+    """老数据没有原话叫法列,不能因此不沉淀。"""
+    user = await _user()
+    _, rec = await _food(
+        user, name="猪脚饭", grams=400, kcal=800, source="llm_estimated"
+    )
+    await api.patch_food(rec.id, api.FoodPatch(kcal=900), user)
+    [uf] = await UserFood.filter(user=user)
+    assert uf.name == "猪脚饭"
+
+
+async def test_改热量_带量词记录_沉淀成按份条目(db):
+    """整份食物按份存,克数不参与——模型倒填的克数不可信。"""
+    user = await _user()
+    _, rec = await _food(
+        user, name="兰州拉面", grams=500, kcal=550, source="llm_estimated"
+    )
+    rec.unit, rec.unit_count = "碗", 1
+    await rec.save()
+    await api.patch_food(rec.id, api.FoodPatch(kcal=620), user)
+    [uf] = await UserFood.filter(user=user)
+    assert (uf.name, uf.unit) == ("兰州拉面", "碗")
+    assert uf.kcal_per_unit == 620
+    assert uf.kcal is None
+
+
+async def test_改热量_两碗还原成一碗的热量(db):
+    user = await _user()
+    _, rec = await _food(
+        user, name="兰州拉面", grams=1000, kcal=1100, source="llm_estimated"
+    )
+    rec.unit, rec.unit_count = "碗", 2
+    await rec.save()
+    await api.patch_food(rec.id, api.FoodPatch(kcal=1240), user)
+    [uf] = await UserFood.filter(user=user)
+    assert uf.kcal_per_unit == 620
+
+
+async def test_改热量_重复改同一样东西_按新值覆盖不重复建条(db):
+    user = await _user()
+    for kcal in (620, 700):
+        _, rec = await _food(
+            user, name="兰州拉面", grams=500, kcal=550, source="llm_estimated"
+        )
+        rec.unit, rec.unit_count = "碗", 1
+        await rec.save()
+        await api.patch_food(rec.id, api.FoodPatch(kcal=kcal), user)
+    [uf] = await UserFood.filter(user=user)
+    assert uf.kcal_per_unit == 700
+
+
+async def test_改热量_查表记录不沉淀(db):
+    """查表命中的数是表给的,用户改它不代表表错了,不进个人库。"""
+    user = await _user()
+    _, rec = await _food(user)  # source=food_table
+    await api.patch_food(rec.id, api.FoodPatch(kcal=999), user)
+    assert await UserFood.filter(user=user).count() == 0
+
+
+async def test_改克数_不沉淀(db):
+    """改克数只是换算,没给出新知识。"""
+    user = await _user()
+    _, rec = await _food(
+        user, name="兰州拉面", grams=500, kcal=550, source="llm_estimated"
+    )
+    await api.patch_food(rec.id, api.FoodPatch(grams=400), user)
+    assert await UserFood.filter(user=user).count() == 0
 
 
 async def test_改普通记录_不产生纠正记忆(db):

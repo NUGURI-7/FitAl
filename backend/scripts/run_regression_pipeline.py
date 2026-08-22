@@ -46,9 +46,11 @@ async def main() -> None:
         birth_year=user.birth_year,
     )
     user_foods = {
-        lookup.norm_key(uf.name): parser.UserFoodDef(
+        (lookup.norm_key(uf.name), uf.unit): parser.UserFoodDef(
             name=uf.name,
             kcal=uf.kcal,
+            unit=uf.unit,
+            kcal_per_unit=uf.kcal_per_unit,
             protein=uf.protein,
             fat=uf.fat,
             cho=uf.cho,
@@ -74,7 +76,7 @@ async def main() -> None:
             pr = await pipeline.parse_via_triage(
                 text,
                 now=now,
-                user_food_keys=frozenset(user_foods),
+                user_food_keys=frozenset(k for k, _ in user_foods),
                 open_session=None,
                 alias_memories=alias_memories,
                 all_memories=all_memories,

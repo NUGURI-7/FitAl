@@ -51,7 +51,11 @@ class ParsedFood(BaseModel):
     """单独报的一种食物(不是拆解出的菜);拆解类用 ParsedDish。"""
 
     type: Literal["food"] = "food"
-    spoken_name: str = Field(description="用户嘴里对这个食物的叫法,一字不改照抄")
+    spoken_name: str = Field(
+        description="用户嘴里对这个食物的叫法,一字不改照抄。"
+        "只要食物本身的名字——数量和量词已有独立字段(count/unit),"
+        "绝不粘进来:'一碗大米饭'填'大米饭'、'两个鸡蛋'填'鸡蛋'"
+    )
     name: str = Field(
         description="标准名映射:往成分表标准名靠(同类多条目优先带'(代表值)'的);映射不了保留原话"
     )
@@ -65,13 +69,21 @@ class ParsedFood(BaseModel):
         description="数量:'两个鸡蛋'填2、'三根香蕉'填3;没报数量不填。"
         "总克数=count×grams 由代码相乘,你绝不相乘",
     )
+    unit: str | None = Field(
+        None,
+        description="量词:用户说'一碗面'填'碗'、'两根香蕉'填'根'、'一份肠粉'填'份'。"
+        "一字不改照抄用户的量词,不要换成同义词;用户直接报克数(如'150克鸡胸肉')不填",
+    )
     form: FoodForm | None = Field(
         None,
         description="形态:仅当用户明说了生/熟/干/水发/即食(或同义词)才填;没明说必须不填,绝不猜",
     )
     reported_kcal: float | None = Field(None, description="用户自己报的热量,原样照抄")
-    est_kcal: float | None = Field(
-        None, description="该份食物总热量估算,仅当名称可能不在表里时作兜底"
+    est_kcal_per_serving: float | None = Field(
+        None,
+        description="一份的热量估算(千卡),仅当名称可能不在表里时作兜底。"
+        "报了数量(count)时只填【一份】的热量,绝不乘数量——总热量由代码相乘,"
+        "与 grams 同口径(grams 填单份克数,这里就填那些克数对应的热量)",
     )
     is_condiment: bool = Field(
         False, description="是否为自动补的烹调油/高热量调味条目(非用户明说)"
@@ -79,7 +91,8 @@ class ParsedFood(BaseModel):
     whole_dish: bool = Field(
         False,
         description="复合菜且用户没报成分时填 true:spoken_name 和 name 都照抄菜名,"
-        "绝不往成分表映射、绝不拆成分;grams 仅用户报了才填;est_kcal 不用填,"
+        "绝不往成分表映射、绝不拆成分;grams 仅用户报了才填;"
+        "est_kcal_per_serving 不用填,"
         "热量由系统另行估算",
     )
     meal_slot: MealSlot | None = Field(
@@ -133,9 +146,13 @@ class ParsedDish(BaseModel):
 class CleanEstimate(BaseModel):
     """干净估算调用的返回格(2026-07-12 用户定):像自由聊天一样估整份食物。"""
 
-    kcal: float = Field(description="这份食物的总热量(千卡),按常识估算")
+    kcal: float = Field(
+        description="【一份】的热量(千卡),按常识估算。"
+        "用户说了几份就只估其中一份,绝不把份数乘进来——乘法由代码做"
+    )
     grams: float | None = Field(
-        None, description="这份食物的总克重(克),按常识估算;不确定可不填"
+        None,
+        description="【一份】的克重(克),按常识估算;不确定可不填。同样不乘份数",
     )
 
 

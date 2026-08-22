@@ -138,7 +138,7 @@ struct SettingsView: View {
     private var foodsSection: some View {
         if let foods {
             if foods.isEmpty {
-                emptyCard("还没有自定义食物,对话里说\n「记住蛋白粉一勺30克120千卡」就能添加")
+                emptyCard("还没有自定义食物,对话里说\n「记住蛋白粉一勺30克120千卡」就能添加\n改过 AI 估算的热量后,也会自动记在这里")
             } else {
                 VStack(spacing: 8) {
                     ForEach(foods) { foodRow($0) }
@@ -176,10 +176,10 @@ struct SettingsView: View {
             }
             Spacer()
             HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(f.kcal.cleanString)
+                Text(f.displayKcal.cleanString)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
-                Text("千卡/100g")
+                Text(f.displayUnit)
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.textSecondary)
             }

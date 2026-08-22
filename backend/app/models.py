@@ -177,8 +177,17 @@ class FoodRecord(Model):
         max_length=32
     )  # user_reported | food_table | llm_estimated
     kcal = fields.FloatField()
-    food_name = fields.CharField(max_length=64)
+    food_name = fields.CharField(max_length=64)  # 成分表学名:改克数回查表重算、展示用
+    spoken_name = fields.CharField(
+        max_length=64, null=True
+    )  # 用户的原话叫法:个人食物库按它精确命中,沉淀时用它当条目名
     grams = fields.FloatField(null=True)  # 自报总热量没报克数时可空
+    unit = fields.CharField(
+        max_length=8, null=True
+    )  # 用户说的量词(碗/根/份/个/杯),照抄原话;没用量词为空
+    unit_count = fields.IntField(
+        null=True
+    )  # 该量词的数量("两碗面"=2);沉淀时用它还原单份热量
     dish = fields.CharField(
         max_length=64, null=True
     )  # 所属菜名:同菜成分同名;菜合计现算,不建菜表
@@ -202,15 +211,24 @@ class FoodRecord(Model):
 
 
 class UserFood(Model):
-    """用户自定义食物:每100克口径,与官方表同构;查表优先级高于标准表。"""
+    """用户自定义食物:查表优先级高于标准表。两种口径二选一——
+
+    量词为空 = 每100克口径(与官方表同构,kcal 有值);
+    量词有值 = 按份口径(如"一碗=550千卡",kcal_per_unit 有值,不谈克数)。
+    整份食物(一碗面/一份肠粉)的克数是模型倒填的,不可信,故不作分母。
+    """
 
     id = fields.IntField(primary_key=True)
     user = fields.ForeignKeyField(
         "models.User", related_name="user_foods", on_delete=fields.CASCADE
     )
     name = fields.CharField(max_length=64)
+    # 量词:碗/根/份;空串=每100克口径。不可空是刻意的——两方言的唯一约束都
+    # 把 NULL 视为互不相等,可空会让"重复记住即更新"退化成插多条
+    unit = fields.CharField(max_length=8, default="")
     form = fields.CharField(max_length=16, null=True)  # 形态:生/熟/干/水发/即食
-    kcal = fields.FloatField()  # 每100克
+    kcal = fields.FloatField(null=True)  # 每100克(量词为空时有值)
+    kcal_per_unit = fields.FloatField(null=True)  # 一个该量词多少千卡(量词有值时)
     protein = fields.FloatField(null=True)
     fat = fields.FloatField(null=True)
     cho = fields.FloatField(null=True)
@@ -220,7 +238,7 @@ class UserFood(Model):
 
     class Meta:
         table = "user_foods"
-        unique_together = (("user", "name"),)
+        unique_together = (("user", "name", "unit"),)
 
 
 class AiMemory(Model):

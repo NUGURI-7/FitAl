@@ -295,6 +295,8 @@ export function SettingsPage({
             还没有自定义食物,对话里说
             <br />
             「记住蛋白粉一勺30克120千卡」就能添加
+            <br />
+            改过 AI 估算的热量后,也会自动记在这里
           </p>
         )}
         {foods && foods.length > 0 && (
@@ -318,9 +320,9 @@ export function SettingsPage({
                   </div>
                 </div>
                 <span className="num text-[14px] font-semibold">
-                  {+f.kcal.toFixed(1)}
+                  {+(f.unit ? (f.kcalPerUnit ?? 0) : (f.kcal ?? 0)).toFixed(1)}
                   <span className="ml-0.5 text-[10px] font-normal text-ink-soft">
-                    千卡/100g
+                    {f.unit ? `千卡/${f.unit}` : "千卡/100g"}
                   </span>
                 </span>
                 <button
