@@ -81,10 +81,19 @@ async def test_删除_餐次重算_删到空则整组消失(db):
     assert await Meal.get_or_none(id=meal.id) is None  # 组空即删
 
 
-async def test_删AI估算条目_产生纠正记忆(db):
+async def test_删AI估算条目_不产生任何记忆(db):
+    """删除的含义多义(记重了/没吃/确实估错),不当纠正学。"""
     user = await _user()
     _, rec = await _food(user, name="菜籽油", grams=10, kcal=90, source="llm_estimated")
     await api.delete_food(rec.id, user)
+    assert await AiMemory.filter(user=user).count() == 0
+
+
+async def test_改AI估算条目热量_仍产生纠正记忆(db):
+    """改热量=用户给出了正确答案,这条学习路径保留不动。"""
+    user = await _user()
+    _, rec = await _food(user, name="菜籽油", grams=10, kcal=90, source="llm_estimated")
+    await api.patch_food(rec.id, api.FoodPatch(kcal=45), user)
     [memory] = await AiMemory.filter(user=user)
     assert memory.kind == "correction"
     assert "菜籽油" in memory.content

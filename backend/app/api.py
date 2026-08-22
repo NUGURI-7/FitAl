@@ -609,7 +609,12 @@ def _exercise_desc(rec: ExerciseRecord) -> str:
 
 
 async def _learn_correction(user_id: int, was_estimated: bool, content: str) -> None:
-    """纠正即时学:仅当被改/删的是 AI 估算记录(=用户在纠正 AI 的猜测)。"""
+    """纠正即时学:仅当用户**修改**了 AI 估算记录(=给出了正确答案)。
+
+    删除不再学(2026-08-22):一次删除的含义是多义的(记重了/没吃/试一下/确实估错),
+    统一当成"AI 估错了"是把噪音当知识;学出来的又是"用户删除了X"这类动作日志,
+    注入解析提示词后模型无从行动,反而压制补油补调味。
+    """
     if was_estimated:
         await AiMemory.create(user_id=user_id, kind="correction", content=content)
 
@@ -746,11 +751,6 @@ async def delete_food(record_id: int, user: User = Depends(current_user)) -> dic
     rec = await FoodRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
-    await _learn_correction(
-        rec.user_id,
-        rec.source == "llm_estimated",
-        f"用户删除了AI估算的「{_food_desc(rec)}」(原句:{rec.raw_text})",
-    )
     meal_id = rec.meal_id
     await rec.delete()
     meal = await Meal.get_or_none(id=meal_id) if meal_id else None
@@ -764,11 +764,6 @@ async def delete_exercise(record_id: int, user: User = Depends(current_user)) ->
     rec = await ExerciseRecord.get_or_none(id=record_id, user_id=user.id)
     if rec is None:
         raise HTTPException(404, "记录不存在")
-    await _learn_correction(
-        rec.user_id,
-        rec.source == "llm_estimated",
-        f"用户删除了AI估算的「{_exercise_desc(rec)}」(原句:{rec.raw_text})",
-    )
     session_id = rec.session_id
     await rec.delete()
     session = await Session.get_or_none(id=session_id) if session_id else None
