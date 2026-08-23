@@ -64,7 +64,6 @@ struct SettingsView: View {
                     textRow(label: "身高", text: $height, keyboard: .decimalPad, unit: "cm")
                     sexRow
                     textRow(label: "出生年份", text: $birthYear, keyboard: .numberPad, unit: "年")
-                    readOnlyRow(label: "用户 ID", value: "\(profile.id)")
                 }
 
                 Text("用户名是登录标识,不可改;昵称随便改、可重名。身高、性别、出生年份用于基础代谢与消耗计算;改档案不影响已存的记录,汇总里现算的数字会自动按新档案计。")

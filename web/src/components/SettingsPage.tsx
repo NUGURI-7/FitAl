@@ -258,10 +258,6 @@ export function SettingsPage({
             onChange={setBirthYear}
             mode="numeric"
           />
-          <div className="flex items-center justify-between rounded-xl bg-card px-4 py-3 ring-1 ring-black/[0.04]">
-            <span className="text-[13px] text-ink-soft">用户 ID</span>
-            <span className="num text-[16px] font-semibold">{profile.id}</span>
-          </div>
         </div>
 
         <p className="px-1 pt-2 text-[11px] leading-relaxed text-ink-soft/80">

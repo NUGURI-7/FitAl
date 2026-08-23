@@ -153,8 +153,7 @@ fun SettingsScreen(onBack: () -> Unit, onSaved: () -> Unit, onLoggedOut: () -> U
                 FieldRow("昵称", nickname, { nickname = it }, null)
                 FieldRow("身高", height, { height = it }, "cm", decimal = true)
                 SexRow(sex) { sex = it }
-                FieldRow("出生年份", birthYear, { birthYear = it }, "年", numeric = true)
-                ReadOnlyRow("用户 ID", base?.id?.toString() ?: "—", last = true)
+                FieldRow("出生年份", birthYear, { birthYear = it }, "年", numeric = true, last = true)
             }
             Hint(
                 "用户名是登录标识，不可改；昵称随便改、可重名。身高、性别、出生年份用于基础代谢与消耗计算；" +
@@ -336,6 +335,7 @@ private fun FieldRow(
     unit: String?,
     decimal: Boolean = false,
     numeric: Boolean = false,
+    last: Boolean = false,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontSize = 14.sp, color = TextSecondary)
@@ -367,7 +367,7 @@ private fun FieldRow(
         )
         unit?.let { Text(it, fontSize = 12.sp, color = TextSecondary) }
     }
-    HorizontalDivider(color = TextSecondary.copy(alpha = 0.12f))
+    if (!last) HorizontalDivider(color = TextSecondary.copy(alpha = 0.12f))
 }
 
 @Composable
