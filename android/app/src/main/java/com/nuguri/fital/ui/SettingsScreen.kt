@@ -258,6 +258,8 @@ fun SettingsScreen(onBack: () -> Unit, onSaved: () -> Unit, onLoggedOut: () -> U
             SectionHeader("账号")
             PasswordBlock()
             Spacer(Modifier.height(8.dp))
+            LogoutOthersRow()
+            Spacer(Modifier.height(8.dp))
             Button(
                 onClick = { scope.launch { Api.logout(); onLoggedOut() } },
                 colors = ButtonDefaults.buttonColors(
@@ -576,6 +578,43 @@ private fun PasswordRow(label: String, value: String, onChange: (String) -> Unit
                 unfocusedIndicatorColor = Color.Transparent,
             ),
             modifier = Modifier.width(160.dp),
+        )
+    }
+}
+
+
+/**
+ * 退出其他设备(2026-08-23):令牌存库天生可吊销,删掉别处的行即可,
+ * 当前这台不受影响。
+ */
+@Composable
+private fun LogoutOthersRow() {
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var msg by remember { mutableStateOf<String?>(null) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)
+            .clickableNoRipple {
+                if (!busy) {
+                    busy = true
+                    scope.launch {
+                        runCatching { Api.logoutOthers() }
+                            .onSuccess { msg = if (it > 0) "已退出 $it 台" else "没有别的设备登录着" }
+                            .onFailure { msg = it.message ?: "操作失败" }
+                        busy = false
+                    }
+                }
+            }
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("退出其他设备", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+        Spacer(Modifier.weight(1f))
+        Text(
+            if (busy) "处理中…" else (msg ?: ""),
+            fontSize = 12.sp,
+            color = TextSecondary,
         )
     }
 }

@@ -45,7 +45,9 @@ function authHeaders(): Record<string, string> {
 // 登录/注册/退出的 401 是"账号密码不对",不该清本地登录态;
 // 改密码要带令牌,它的 401 是真的登录失效,照常走清令牌回登录页
 const isAuthCall = (url: string) =>
-  url.startsWith("/api/auth/") && !url.endsWith("/password");
+  url.startsWith("/api/auth/") &&
+  !url.endsWith("/password") &&
+  !url.endsWith("/logout-others");
 
 // ── 后端响应结构(契约②③④) ─────────────────────────────────────────────
 
@@ -181,6 +183,13 @@ export async function changePassword(
       new_password: newPassword,
     }),
   });
+  return d.revoked_devices ?? 0;
+}
+
+/** 退出其他设备(2026-08-23):删该用户其他全部令牌,当前这台不受影响。
+ * 返回被踢下线的设备数。 */
+export async function logoutOthers(): Promise<number> {
+  const d = await requestJSON("/api/auth/logout-others", { method: "POST" });
   return d.revoked_devices ?? 0;
 }
 

@@ -199,6 +199,12 @@ async def current_user(authorization: str = Header(default="")) -> User:
     return await User.get(id=row.user_id)
 
 
+async def _revoke_other_tokens(user: User, authorization: str) -> int:
+    """删该用户其他全部令牌,保留当前这枚;返回被踢下线的设备数。"""
+    current = authorization.removeprefix("Bearer ").strip()
+    return await AuthToken.filter(user=user).exclude(token=current).delete() or 0
+
+
 class PasswordChangeIn(BaseModel):
     old_password: str
     new_password: str = Field(min_length=6)
@@ -227,9 +233,24 @@ async def change_password(
 
     user.password_hash = _hash_password(body.new_password)
     await user.save()
-    current_token = authorization.removeprefix("Bearer ").strip()
-    revoked = await AuthToken.filter(user=user).exclude(token=current_token).delete()
-    return {"status": "ok", "revoked_devices": revoked or 0}
+    revoked = await _revoke_other_tokens(user, authorization)
+    return {"status": "ok", "revoked_devices": revoked}
+
+
+@router.post("/auth/logout-others")
+async def logout_others(
+    authorization: str = Header(default=""),
+    user: User = Depends(current_user),
+) -> dict:
+    """退出其他设备(2026-08-23 用户定):删该用户其他全部令牌,当前这台保留。
+
+    令牌存库天生可吊销(删行即失效),永不过期不是漏洞,缺的是吊销手段和
+    用户自助入口——这个接口就是那个入口。没有其他设备时回 0,不算失败。
+    """
+    return {
+        "status": "ok",
+        "revoked_devices": await _revoke_other_tokens(user, authorization),
+    }
 
 
 class ChatIn(BaseModel):

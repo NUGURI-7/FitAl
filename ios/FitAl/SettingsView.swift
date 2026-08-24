@@ -93,6 +93,7 @@ struct SettingsView: View {
                 sectionHeader("账号")
                     .padding(.top, 16)
                 passwordSection
+                logoutOthersButton
                 logoutButton
                 hintText("只下线这台设备,数据都在云端;重新登录即可回来。")
             }
@@ -670,6 +671,43 @@ struct SettingsView: View {
             }
             pwBusy = false
         }
+    }
+
+    // MARK: - 退出其他设备
+
+    @State private var othersBusy = false
+    @State private var othersMsg: String?
+
+    /// 退出其他设备:令牌存库天生可吊销,删掉别处的行即可;当前这台不受影响
+    private var logoutOthersButton: some View {
+        Button {
+            guard !othersBusy else { return }
+            othersBusy = true
+            Task {
+                do {
+                    let n = try await API.logoutOthers()
+                    othersMsg = n > 0 ? "已退出 \(n) 台" : "没有别的设备登录着"
+                } catch {
+                    othersMsg = error.localizedDescription
+                }
+                othersBusy = false
+            }
+        } label: {
+            HStack {
+                Label("退出其他设备", systemImage: "iphone.and.arrow.forward")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Text(othersBusy ? "处理中…" : (othersMsg ?? ""))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .background(Theme.card, in: .rect(cornerRadius: 14))
+        }
+        .buttonStyle(PressableStyle())
+        .disabled(othersBusy)
     }
 
     // MARK: - 退出登录

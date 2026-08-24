@@ -150,6 +150,16 @@ enum API {
         return try decoder.decode(PasswordOut.self, from: data).revokedDevices
     }
 
+    /// 退出其他设备(2026-08-23):删该用户其他全部令牌,当前这台不受影响;
+    /// 返回被踢下线的设备数
+    static func logoutOthers() async throws -> Int {
+        struct RevokeOut: Decodable { let revokedDevices: Int }
+        let req = request("auth/logout-others", method: "POST")
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data)
+        return try decoder.decode(RevokeOut.self, from: data).revokedDevices
+    }
+
     /// 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地
     static func logout() async {
         let req = request("auth/logout", method: "POST")

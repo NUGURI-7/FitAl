@@ -110,3 +110,43 @@ async def test_改密码_两个人各锁各的(db):
             await _change(me, old="猜的密码")
 
     assert (await _change(other))["status"] == "ok"  # 邻居不受牵连
+
+
+# ── 退出其他设备(2026-08-23):令牌存库天生可吊销,这是用户自助的吊销入口 ──
+
+
+async def test_退出其他设备_别的令牌全失效_当前这台还在(db):
+    phone = await _new_user()
+    others = [
+        (
+            await api.login(
+                api.LoginIn(username="xinpengyou", password="secret6"), fake_request()
+            )
+        )["token"]
+        for _ in range(2)
+    ]
+
+    user = await api.current_user(f"Bearer {phone}")
+    out = await api.logout_others(f"Bearer {phone}", user)
+    assert out["revoked_devices"] == 2
+
+    assert await api.current_user(f"Bearer {phone}")  # 当前这台照常
+    for gone in others:
+        with pytest.raises(HTTPException) as e:
+            await api.current_user(f"Bearer {gone}")
+        assert e.value.status_code == 401
+
+
+async def test_退出其他设备_本来就只有一台_回零不算失败(db):
+    token = await _new_user()
+    user = await api.current_user(f"Bearer {token}")
+    assert (await api.logout_others(f"Bearer {token}", user))["revoked_devices"] == 0
+
+
+async def test_退出其他设备_不碰别人的登录(db):
+    me = await _new_user()
+    other = await _new_user(username="linju")
+
+    user = await api.current_user(f"Bearer {me}")
+    await api.logout_others(f"Bearer {me}", user)
+    assert await api.current_user(f"Bearer {other}")  # 邻居照常在线

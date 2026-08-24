@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, KeyRound, LogOut, Trash2 } from "lucide-react";
+import { ChevronLeft, KeyRound, LogOut, Smartphone, Trash2 } from "lucide-react";
 import {
   changePassword,
   deleteMemory,
@@ -7,6 +7,7 @@ import {
   fetchMemories,
   fetchUserFoods,
   logout,
+  logoutOthers,
   patchUser,
   type MemoryItem,
   type UserFoodItem,
@@ -190,6 +191,21 @@ export function SettingsPage({
       setPwError(e instanceof Error ? e.message : "改密码失败");
     } finally {
       setPwBusy(false);
+    }
+  };
+
+  // 退出其他设备:令牌存库天生可吊销,删掉别处的行即可;当前这台不受影响
+  const [othersBusy, setOthersBusy] = useState(false);
+  const [othersMsg, setOthersMsg] = useState<string | null>(null);
+  const doLogoutOthers = async () => {
+    setOthersBusy(true);
+    try {
+      const n = await logoutOthers();
+      setOthersMsg(n > 0 ? `已退出 ${n} 台` : "没有别的设备登录着");
+    } catch (e) {
+      setOthersMsg(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setOthersBusy(false);
     }
   };
 
@@ -517,6 +533,20 @@ export function SettingsPage({
             </div>
           </div>
         )}
+        <button
+          type="button"
+          onClick={doLogoutOthers}
+          disabled={othersBusy}
+          className="mb-2 flex w-full items-center justify-between rounded-xl bg-card px-4 py-3 text-[15px] font-semibold ring-1 ring-black/[0.04] transition-transform active:scale-[0.98] disabled:opacity-40"
+        >
+          <span className="flex items-center gap-2">
+            <Smartphone size={16} strokeWidth={2.5} className="text-ink-soft" />
+            退出其他设备
+          </span>
+          <span className="text-[12px] font-normal text-ink-soft">
+            {othersBusy ? "处理中…" : (othersMsg ?? "")}
+          </span>
+        </button>
         <button
           type="button"
           onClick={doLogout}

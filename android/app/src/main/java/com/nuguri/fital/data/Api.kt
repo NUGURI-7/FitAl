@@ -239,6 +239,12 @@ object Api {
         return json.decodeFromString<PasswordChangeOut>(text).revokedDevices
     }
 
+    /** 退出其他设备:删该用户其他全部令牌,当前这台不受影响;返回被踢下线的设备数 */
+    suspend fun logoutOthers(): Int {
+        val text = call("auth/logout-others", "POST")
+        return json.decodeFromString<PasswordChangeOut>(text).revokedDevices
+    }
+
     /** 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地 */
     suspend fun logout() {
         runCatching { call("auth/logout", "POST", kickOn401 = false) }
