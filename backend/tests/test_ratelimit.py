@@ -166,3 +166,23 @@ async def test_注册成功不受限速影响(db):
             await api.register(_register_body(invite_code="瞎猜的"), fake_request())
 
     assert (await api.register(_register_body(), fake_request()))["user_id"]
+
+
+# ── 来源 IP 的取法(2026-08-23:线上是 访客→Cloudflare→Caddy→本服务)────
+
+
+def test_优先用_cloudflare_填的地址_访客伪造的转发头不算():
+    req = fake_request(
+        "10.0.0.1",
+        {"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "伪造的, 10.0.0.1"},
+    )
+    assert api._client_ip(req) == "1.1.1.1"
+
+
+def test_没有_cloudflare_头时退回通用转发头的第一个地址():
+    req = fake_request("10.0.0.1", {"x-forwarded-for": "2.2.2.2, 10.0.0.1"})
+    assert api._client_ip(req) == "2.2.2.2"
+
+
+def test_两个头都没有时用直连地址():
+    assert api._client_ip(fake_request("3.3.3.3")) == "3.3.3.3"

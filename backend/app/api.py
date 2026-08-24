@@ -96,7 +96,17 @@ class LoginIn(BaseModel):
 
 
 def _client_ip(request: Request) -> str:
-    """取来源 IP:有反向代理时以它转发的第一个地址为准,没有则用直连地址。"""
+    """取来源 IP,按可信程度从高到低:
+
+    1. Cloudflare 填的那个——线上是 访客→Cloudflare→Caddy→本服务(2026-08-23 实测确认),
+       这个头由 Cloudflare 覆写,访客伪造不了;
+    2. 通用转发头的第一个地址——没走 Cloudflare 时的退路,但访客能自己塞假的,
+       故只作次选(伪造它只能绕开按 IP 那条线,按用户名那条不受影响);
+    3. 直连地址——本地开发/直接暴露时。
+    """
+    cf = request.headers.get("cf-connecting-ip", "").strip()
+    if cf:
+        return cf
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
         return forwarded.split(",")[0].strip()

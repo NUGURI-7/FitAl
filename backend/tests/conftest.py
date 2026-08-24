@@ -6,14 +6,18 @@ from tortoise import Tortoise
 from app import ratelimit
 
 
-def fake_request(ip: str = "203.0.113.1") -> Request:
-    """直接调用接口函数的单测用:造一个只带来源地址的最小请求。"""
+def fake_request(
+    ip: str = "203.0.113.1", headers: dict[str, str] | None = None
+) -> Request:
+    """直接调用接口函数的单测用:造一个带来源地址(可另带请求头)的最小请求。"""
     return Request(
         {
             "type": "http",
             "method": "POST",
             "path": "/",
-            "headers": [],
+            "headers": [
+                (k.lower().encode(), v.encode()) for k, v in (headers or {}).items()
+            ],
             "client": (ip, 54321),
         }
     )
