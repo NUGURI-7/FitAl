@@ -7,7 +7,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import bcrypt
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from tortoise import Tortoise, timezone
@@ -22,6 +22,7 @@ from app.ai.schema import (
     ParseOutput,
 )
 from app.config import settings
+from app import ratelimit
 from app.models import (
     AiMemory,
     AuthToken,
@@ -94,11 +95,36 @@ class LoginIn(BaseModel):
     password: str
 
 
+def _client_ip(request: Request) -> str:
+    """取来源 IP:有反向代理时以它转发的第一个地址为准,没有则用直连地址。"""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _guard(bucket: str, key: str, policy: ratelimit.Policy) -> None:
+    """被限就直接拒,不再往下核验(锁定期内不累加失败次数)。"""
+    wait = ratelimit.retry_after(bucket, key, policy)
+    if wait:
+        raise HTTPException(
+            429,
+            f"尝试太多次了,请 {max(wait // 60, 1)} 分钟后再试",
+            headers={"Retry-After": str(wait)},
+        )
+
+
 @router.post("/auth/register")
-async def register(body: RegisterIn) -> dict:
-    """验码未用 → 用户名未占 → 建用户 → 码作废 → 当场发令牌(免二次登录)。"""
+async def register(body: RegisterIn, request: Request) -> dict:
+    """验码未用 → 用户名未占 → 建用户 → 码作废 → 当场发令牌(免二次登录)。
+
+    按来源 IP 限速(2026-08-23):邀请码也是可暴力猜的秘密,不限等于敞着。
+    """
+    ip = _client_ip(request)
+    _guard("register_ip", ip, ratelimit.REGISTER_IP)
     code = await InviteCode.get_or_none(code=body.invite_code.strip())
     if code is None or code.used_at is not None:
+        ratelimit.record_failure("register_ip", ip, ratelimit.REGISTER_IP)
         raise HTTPException(403, "邀请码无效或已被使用")
     nickname = (body.nickname or "").strip() or body.username
     try:
@@ -119,16 +145,28 @@ async def register(body: RegisterIn) -> dict:
 
 
 @router.post("/auth/login")
-async def login(body: LoginIn) -> dict:
+async def login(body: LoginIn, request: Request) -> dict:
     """失败统一一句话,不区分用户名还是密码错(不给撞库者线索)。
-    password_hash 为空=登录上线前的存量用户,视同密码不对,等脚本补密码。"""
-    user = await User.get_or_none(username=body.username.strip())
+    password_hash 为空=登录上线前的存量用户,视同密码不对,等脚本补密码。
+
+    两条限速线(2026-08-23 用户定):按用户名挡"死磕一个账号",
+    按来源 IP 挡"一个来源横扫多个账号";任一超限即拒,成功登录清零。
+    """
+    username = body.username.strip()
+    ip = _client_ip(request)
+    _guard("login_user", username, ratelimit.LOGIN_USER)
+    _guard("login_ip", ip, ratelimit.LOGIN_IP)
+    user = await User.get_or_none(username=username)
     if (
         user is None
         or user.password_hash is None
         or not _verify_password(body.password, user.password_hash)
     ):
+        ratelimit.record_failure("login_user", username, ratelimit.LOGIN_USER)
+        ratelimit.record_failure("login_ip", ip, ratelimit.LOGIN_IP)
         raise HTTPException(401, "用户名或密码不对")
+    ratelimit.clear("login_user", username)
+    ratelimit.clear("login_ip", ip)
     return {"token": await _issue_token(user), "user_id": user.id}
 
 

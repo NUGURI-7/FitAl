@@ -1,5 +1,30 @@
+import pytest
 import pytest_asyncio
+from starlette.requests import Request
 from tortoise import Tortoise
+
+from app import ratelimit
+
+
+def fake_request(ip: str = "203.0.113.1") -> Request:
+    """直接调用接口函数的单测用:造一个只带来源地址的最小请求。"""
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "client": (ip, 54321),
+        }
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_ratelimit():
+    """限速计数在进程内存里,测试之间必须清干净,否则互相串。"""
+    ratelimit.reset_all()
+    yield
+    ratelimit.reset_all()
 
 
 @pytest_asyncio.fixture

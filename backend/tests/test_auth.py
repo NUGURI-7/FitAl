@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app import api
+from tests.conftest import fake_request
 from app.models import AuthToken, InviteCode, User
 
 
@@ -26,7 +27,7 @@ def _register_body(**overrides):
 
 async def test_注册_有效邀请码_建用户发令牌_码作废(db):
     code = await InviteCode.create(code="CODE-1")
-    out = await api.register(_register_body())
+    out = await api.register(_register_body(), fake_request())
 
     user = await User.get(nickname="新朋友")
     assert out["user_id"] == user.id
@@ -37,7 +38,7 @@ async def test_注册_有效邀请码_建用户发令牌_码作废(db):
 
 async def test_注册_密码不存明文_单向哈希可验证(db):
     await InviteCode.create(code="CODE-1")
-    await api.register(_register_body())
+    await api.register(_register_body(), fake_request())
     user = await User.get(nickname="新朋友")
     assert user.password_hash != "secret6"
     assert api._verify_password("secret6", user.password_hash)
@@ -46,15 +47,15 @@ async def test_注册_密码不存明文_单向哈希可验证(db):
 
 async def test_注册_邀请码不存在_403(db):
     with pytest.raises(HTTPException) as e:
-        await api.register(_register_body(invite_code="没这个码"))
+        await api.register(_register_body(invite_code="没这个码"), fake_request())
     assert e.value.status_code == 403
 
 
 async def test_注册_邀请码已被用过_403(db):
     await InviteCode.create(code="CODE-1")
-    await api.register(_register_body())
+    await api.register(_register_body(), fake_request())
     with pytest.raises(HTTPException) as e:
-        await api.register(_register_body(nickname="第二人"))
+        await api.register(_register_body(nickname="第二人"), fake_request())
     assert e.value.status_code == 403
 
 
@@ -68,7 +69,7 @@ async def test_注册_用户名重名_409且不消耗邀请码(db):
     )
     code = await InviteCode.create(code="CODE-1")
     with pytest.raises(HTTPException) as e:
-        await api.register(_register_body(username="zhanwei"))
+        await api.register(_register_body(username="zhanwei"), fake_request())
     assert e.value.status_code == 409
     await code.refresh_from_db()
     assert code.used_at is None  # 注册没成,码还能再用
@@ -83,13 +84,15 @@ async def test_注册_昵称允许重名_用户名不同即可(db):
         birth_year=1997,
     )
     await InviteCode.create(code="CODE-1")
-    out = await api.register(_register_body(username="second_2", nickname="同名昵称"))
+    out = await api.register(
+        _register_body(username="second_2", nickname="同名昵称"), fake_request()
+    )
     assert (await User.get(id=out["user_id"])).nickname == "同名昵称"
 
 
 async def test_注册_昵称留空_默认用用户名(db):
     await InviteCode.create(code="CODE-1")
-    out = await api.register(_register_body(nickname=None))
+    out = await api.register(_register_body(nickname=None), fake_request())
     assert (await User.get(id=out["user_id"])).nickname == "xinpengyou"
 
 
@@ -106,19 +109,25 @@ async def test_注册_密码不足6位_进不了门(db):
 
 async def test_登录_密码正确_发新令牌_与注册令牌并存(db):
     await InviteCode.create(code="CODE-1")
-    first = await api.register(_register_body())
-    second = await api.login(api.LoginIn(username="xinpengyou", password="secret6"))
+    first = await api.register(_register_body(), fake_request())
+    second = await api.login(
+        api.LoginIn(username="xinpengyou", password="secret6"), fake_request()
+    )
     assert second["token"] != first["token"]  # 多设备各持一枚
     assert await AuthToken.all().count() == 2
 
 
 async def test_登录_密码错或用户不存在_统一401同一句话(db):
     await InviteCode.create(code="CODE-1")
-    await api.register(_register_body())
+    await api.register(_register_body(), fake_request())
     with pytest.raises(HTTPException) as e1:
-        await api.login(api.LoginIn(username="xinpengyou", password="wrong-1"))
+        await api.login(
+            api.LoginIn(username="xinpengyou", password="wrong-1"), fake_request()
+        )
     with pytest.raises(HTTPException) as e2:
-        await api.login(api.LoginIn(username="chawuciren", password="secret6"))
+        await api.login(
+            api.LoginIn(username="chawuciren", password="secret6"), fake_request()
+        )
     assert e1.value.status_code == e2.value.status_code == 401
     assert e1.value.detail == e2.value.detail  # 不给撞库者线索
 
@@ -132,14 +141,18 @@ async def test_登录_存量用户没设密码_401(db):
         birth_year=1997,
     )
     with pytest.raises(HTTPException) as e:
-        await api.login(api.LoginIn(username="laoyonghu", password="secret6"))
+        await api.login(
+            api.LoginIn(username="laoyonghu", password="secret6"), fake_request()
+        )
     assert e.value.status_code == 401
 
 
 async def test_退出登录_只删本枚令牌_其他设备不掉线(db):
     await InviteCode.create(code="CODE-1")
-    phone = await api.register(_register_body())
-    web = await api.login(api.LoginIn(username="xinpengyou", password="secret6"))
+    phone = await api.register(_register_body(), fake_request())
+    web = await api.login(
+        api.LoginIn(username="xinpengyou", password="secret6"), fake_request()
+    )
     await api.logout(authorization=f"Bearer {phone['token']}")
     assert await AuthToken.get_or_none(token=phone["token"]) is None
     assert await AuthToken.get_or_none(token=web["token"]) is not None
@@ -152,6 +165,6 @@ async def test_退出登录_令牌已不存在_幂等成功(db):
 
 async def test_认人_有效令牌_返回本人(db):
     await InviteCode.create(code="CODE-1")
-    out = await api.register(_register_body())
+    out = await api.register(_register_body(), fake_request())
     user = await api.current_user(authorization=f"Bearer {out['token']}")
     assert user.id == out["user_id"] and user.nickname == "新朋友"
