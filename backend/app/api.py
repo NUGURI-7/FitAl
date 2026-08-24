@@ -199,6 +199,39 @@ async def current_user(authorization: str = Header(default="")) -> User:
     return await User.get(id=row.user_id)
 
 
+class PasswordChangeIn(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=6)
+
+
+@router.post("/auth/password")
+async def change_password(
+    body: PasswordChangeIn,
+    authorization: str = Header(default=""),
+    user: User = Depends(current_user),
+) -> dict:
+    """改密码(2026-08-23 用户定):旧密码即身份证明,不需要邮箱或短信通道。
+
+    改完把该用户**其他**令牌全删掉(密码改了,别处还在线等于没改),
+    当前这台保留——改个密码还要重新登录一次是白受罪。
+    找回密码不做:那要外部通道,忘了照旧找管理员跑脚本重置。
+    """
+    key = str(user.id)
+    _guard("change_password", key, ratelimit.CHANGE_PASSWORD)
+    if user.password_hash is None or not _verify_password(
+        body.old_password, user.password_hash
+    ):
+        ratelimit.record_failure("change_password", key, ratelimit.CHANGE_PASSWORD)
+        raise HTTPException(403, "旧密码不对")
+    ratelimit.clear("change_password", key)
+
+    user.password_hash = _hash_password(body.new_password)
+    await user.save()
+    current_token = authorization.removeprefix("Bearer ").strip()
+    revoked = await AuthToken.filter(user=user).exclude(token=current_token).delete()
+    return {"status": "ok", "revoked_devices": revoked or 0}
+
+
 class ChatIn(BaseModel):
     text: str = Field(min_length=1)
 

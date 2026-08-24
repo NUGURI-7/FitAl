@@ -42,7 +42,10 @@ function authHeaders(): Record<string, string> {
 }
 
 /** 登录/注册自身的 401/403 是业务错误(密码不对/码无效),不触发踢回守卫 */
-const isAuthCall = (url: string) => url.startsWith("/api/auth/");
+// 登录/注册/退出的 401 是"账号密码不对",不该清本地登录态;
+// 改密码要带令牌,它的 401 是真的登录失效,照常走清令牌回登录页
+const isAuthCall = (url: string) =>
+  url.startsWith("/api/auth/") && !url.endsWith("/password");
 
 // ── 后端响应结构(契约②③④) ─────────────────────────────────────────────
 
@@ -161,6 +164,24 @@ export async function login(username: string, password: string): Promise<void> {
     body: JSON.stringify({ username, password }),
   });
   setAuth(d.token);
+}
+
+/** 改密码(2026-08-23):旧密码即身份证明,不接邮箱短信。
+ * 改完服务器把该用户其他设备的令牌全删掉,当前这台保留(不用重新登录)。
+ * 返回被踢下线的设备数。 */
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string,
+): Promise<number> {
+  const d = await requestJSON("/api/auth/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      old_password: oldPassword,
+      new_password: newPassword,
+    }),
+  });
+  return d.revoked_devices ?? 0;
 }
 
 /** 退出登录:服务器删本枚令牌(幂等);无论成败本地登录态都清 */

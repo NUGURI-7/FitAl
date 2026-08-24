@@ -130,6 +130,26 @@ enum API {
         AuthStore.save(try decoder.decode(AuthResponse.self, from: data).token)
     }
 
+    /// 改密码(2026-08-23):旧密码即身份证明,不接邮箱短信通道。
+    /// 改完服务器把该用户其他设备的令牌全删掉,当前这台保留;返回被踢下线的设备数。
+    /// 401 照常触发踢回登录页——这里的 401 是令牌失效,不是密码不对(密码不对回 403)
+    static func changePassword(old: String, new newPassword: String) async throws -> Int {
+        struct PasswordIn: Encodable {
+            let oldPassword: String, newPassword: String
+            enum CodingKeys: String, CodingKey {
+                case oldPassword = "old_password"
+                case newPassword = "new_password"
+            }
+        }
+        struct PasswordOut: Decodable { let revokedDevices: Int }
+        let body = try JSONEncoder().encode(
+            PasswordIn(oldPassword: old, newPassword: newPassword))
+        let req = request("auth/password", method: "POST", body: body)
+        let (data, resp) = try await session.data(for: req)
+        try ensureOK(resp, data: data)
+        return try decoder.decode(PasswordOut.self, from: data).revokedDevices
+    }
+
     /// 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地
     static func logout() async {
         let req = request("auth/logout", method: "POST")

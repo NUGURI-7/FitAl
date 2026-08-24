@@ -92,6 +92,7 @@ struct SettingsView: View {
 
                 sectionHeader("账号")
                     .padding(.top, 16)
+                passwordSection
                 logoutButton
                 hintText("只下线这台设备,数据都在云端;重新登录即可回来。")
             }
@@ -556,6 +557,118 @@ struct SettingsView: View {
         Task {
             try? await Task.sleep(for: .seconds(3))
             if toast == msg { toast = nil }
+        }
+    }
+
+    // MARK: - 改密码
+
+    @State private var pwOpen = false
+    @State private var pwOld = ""
+    @State private var pwNew = ""
+    @State private var pwAgain = ""
+    @State private var pwBusy = false
+    @State private var pwError: String?
+    @State private var pwDone: String?
+
+    private var pwValid: Bool { !pwOld.isEmpty && pwNew.count >= 6 && pwNew == pwAgain }
+
+    /// 改密码:旧密码即身份证明;改完服务器把其他设备踢下线,当前这台留着
+    @ViewBuilder
+    private var passwordSection: some View {
+        if !pwOpen {
+            Button {
+                pwDone = nil
+                withAnimation(.snappy(duration: 0.25)) { pwOpen = true }
+            } label: {
+                HStack {
+                    Label("修改密码", systemImage: "key.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer()
+                    if let pwDone {
+                        Text(pwDone)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 13)
+                .background(Theme.card, in: .rect(cornerRadius: 14))
+            }
+            .buttonStyle(PressableStyle())
+        } else {
+            VStack(spacing: 10) {
+                passwordField("当前密码", text: $pwOld)
+                passwordField("新密码", text: $pwNew)
+                passwordField("再输一遍", text: $pwAgain)
+                Text("新密码至少 6 位。改完其他设备会被退出登录,这台不用重新登录。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textSecondary.opacity(0.85))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let pwError {
+                    Text(pwError)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.burn)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                HStack(spacing: 8) {
+                    Button("取消") { closePassword() }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Theme.paper, in: .rect(cornerRadius: 12))
+                    Button(pwBusy ? "提交中…" : "确认修改") { submitPassword() }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.card)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Theme.textPrimary, in: .rect(cornerRadius: 12))
+                        .opacity(pwValid && !pwBusy ? 1 : 0.25)
+                        .disabled(!pwValid || pwBusy)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+            .background(Theme.card, in: .rect(cornerRadius: 14))
+        }
+    }
+
+    private func passwordField(_ label: String, text: Binding<String>) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            SecureField("", text: text)
+                .textContentType(label == "当前密码" ? .password : .newPassword)
+                .multilineTextAlignment(.trailing)
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 160)
+        }
+    }
+
+    private func closePassword() {
+        withAnimation(.snappy(duration: 0.25)) { pwOpen = false }
+        pwOld = ""
+        pwNew = ""
+        pwAgain = ""
+        pwError = nil
+    }
+
+    private func submitPassword() {
+        guard pwValid, !pwBusy else { return }
+        pwBusy = true
+        pwError = nil
+        Task {
+            do {
+                let revoked = try await API.changePassword(old: pwOld, new: pwNew)
+                closePassword()
+                pwDone = revoked > 0 ? "已改,顺带退了另外 \(revoked) 台" : "已改"
+            } catch {
+                pwError = error.localizedDescription
+            }
+            pwBusy = false
         }
     }
 

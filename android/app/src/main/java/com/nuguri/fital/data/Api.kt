@@ -228,6 +228,17 @@ object Api {
         call("memories/$id", "DELETE")
     }
 
+    /**
+     * 改密码:旧密码即身份证明。改完服务器把该用户其他设备的令牌全删掉,
+     * 当前这台保留;返回被踢下线的设备数。这里的 401 是令牌失效(密码不对回 403),
+     * 故照常触发踢回登录页。
+     */
+    suspend fun changePassword(oldPassword: String, newPassword: String): Int {
+        val payload = json.encodeToString(PasswordChangeIn(oldPassword, newPassword))
+        val text = call("auth/password", "POST", payload)
+        return json.decodeFromString<PasswordChangeOut>(text).revokedDevices
+    }
+
     /** 退出登录:服务器删本枚令牌(幂等);服务器不可达也照样清本地 */
     suspend fun logout() {
         runCatching { call("auth/logout", "POST", kickOn401 = false) }

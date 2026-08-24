@@ -31,6 +31,8 @@ LOGIN_USER = Policy(max_failures=5, window_sec=300, lock_sec=300)
 LOGIN_IP = Policy(max_failures=20, window_sec=900, lock_sec=900)
 # 注册按 IP 限:挡邀请码暴力猜
 REGISTER_IP = Policy(max_failures=10, window_sec=3600, lock_sec=3600)
+# 改密码时核验旧密码同样可被慢慢试(需持有效令牌,但不限等于敞着):同登录口径
+CHANGE_PASSWORD = Policy(max_failures=5, window_sec=300, lock_sec=300)
 
 
 def _prune(hits: list[float], window_sec: float, now: float) -> list[float]:

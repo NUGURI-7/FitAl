@@ -209,3 +209,16 @@ fun ChatStatus.display(): String = when (stage) {
     "saving" -> "正在算数入库"
     else -> "处理中"
 }
+
+/** 改密码(POST /auth/password):旧密码即身份证明,不接邮箱短信通道 */
+@Serializable
+data class PasswordChangeIn(
+    @SerialName("old_password") val oldPassword: String,
+    @SerialName("new_password") val newPassword: String,
+)
+
+/** 改密码的回执:被踢下线的其他设备数(当前这台保留) */
+@Serializable
+data class PasswordChangeOut(
+    @SerialName("revoked_devices") val revokedDevices: Int = 0,
+)

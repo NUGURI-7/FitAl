@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -255,6 +256,8 @@ fun SettingsScreen(onBack: () -> Unit, onSaved: () -> Unit, onLoggedOut: () -> U
             }
 
             SectionHeader("账号")
+            PasswordBlock()
+            Spacer(Modifier.height(8.dp))
             Button(
                 onClick = { scope.launch { Api.logout(); onLoggedOut() } },
                 colors = ButtonDefaults.buttonColors(
@@ -452,3 +455,127 @@ private fun monthDay(iso: String): String = runCatching {
     OffsetDateTime.parse(iso).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()
 }.recoverCatching { LocalDateTime.parse(iso) }
     .getOrNull()?.format(DateTimeFormatter.ofPattern("M月d日")) ?: ""
+
+
+/**
+ * 改密码(2026-08-23):旧密码即身份证明,不接邮箱短信通道。
+ * 改完服务器把该用户其他设备踢下线,当前这台保留,不用重新登录。
+ */
+@Composable
+private fun PasswordBlock() {
+    val scope = rememberCoroutineScope()
+    var open by remember { mutableStateOf(false) }
+    var oldPw by remember { mutableStateOf("") }
+    var newPw by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var done by remember { mutableStateOf<String?>(null) }
+    val valid = oldPw.isNotEmpty() && newPw.length >= 6 && newPw == again
+
+    fun close() {
+        open = false
+        oldPw = ""
+        newPw = ""
+        again = ""
+        error = null
+    }
+
+    if (!open) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                .background(Card).clickableNoRipple { done = null; open = true }
+                .padding(horizontal = 16.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("修改密码", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextPrimary)
+            Spacer(Modifier.weight(1f))
+            done?.let { Text(it, fontSize = 12.sp, color = TextSecondary) }
+        }
+        return
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Card)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        PasswordRow("当前密码", oldPw) { oldPw = it }
+        PasswordRow("新密码", newPw) { newPw = it }
+        PasswordRow("再输一遍", again) { again = it }
+        Text(
+            "新密码至少 6 位。改完其他设备会被退出登录，这台不用重新登录。",
+            fontSize = 11.sp,
+            color = TextSecondary.copy(alpha = 0.85f),
+        )
+        error?.let { Text(it, fontSize = 12.sp, color = Burn) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { close() },
+                enabled = !busy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TextSecondary.copy(alpha = 0.08f),
+                    contentColor = TextSecondary,
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).height(42.dp),
+            ) { Text("取消", fontSize = 14.sp, fontWeight = FontWeight.Medium) }
+            Button(
+                onClick = {
+                    busy = true
+                    error = null
+                    scope.launch {
+                        runCatching { Api.changePassword(oldPw, newPw) }
+                            .onSuccess { revoked ->
+                                close()
+                                done = if (revoked > 0) "已改，顺带退了另外 $revoked 台" else "已改"
+                            }
+                            .onFailure { error = it.message ?: "改密码失败" }
+                        busy = false
+                    }
+                },
+                enabled = valid && !busy,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TextPrimary,
+                    contentColor = Card,
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).height(42.dp),
+            ) {
+                Text(
+                    if (busy) "提交中…" else "确认修改",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasswordRow(label: String, value: String, onChange: (String) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 14.sp, color = TextSecondary)
+        Spacer(Modifier.weight(1f))
+        TextField(
+            value = value,
+            onValueChange = onChange,
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            textStyle = androidx.compose.ui.text.TextStyle(
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Brand,
+                textAlign = TextAlign.End,
+            ),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+            ),
+            modifier = Modifier.width(160.dp),
+        )
+    }
+}

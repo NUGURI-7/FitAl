@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, LogOut, Trash2 } from "lucide-react";
+import { ChevronLeft, KeyRound, LogOut, Trash2 } from "lucide-react";
 import {
+  changePassword,
   deleteMemory,
   deleteUserFood,
   fetchMemories,
@@ -151,6 +152,44 @@ export function SettingsPage({
       setMemError(e instanceof Error ? e.message : "删除失败");
     } finally {
       setMemBusy(false);
+    }
+  };
+
+  // 改密码:旧密码即身份证明;改完服务器把其他设备踢下线,当前这台留着
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwOld, setPwOld] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwAgain, setPwAgain] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwDone, setPwDone] = useState<string | null>(null);
+  const pwValid =
+    pwOld.length > 0 && pwNew.length >= 6 && pwNew === pwAgain;
+
+  const closePw = () => {
+    setPwOpen(false);
+    setPwOld("");
+    setPwNew("");
+    setPwAgain("");
+    setPwError(null);
+  };
+
+  const doChangePassword = async () => {
+    setPwBusy(true);
+    setPwError(null);
+    setPwDone(null);
+    try {
+      const revoked = await changePassword(pwOld, pwNew);
+      closePw();
+      setPwDone(
+        revoked > 0
+          ? `密码已改,顺带把另外 ${revoked} 台设备退了`
+          : "密码已改",
+      );
+    } catch (e) {
+      setPwError(e instanceof Error ? e.message : "改密码失败");
+    } finally {
+      setPwBusy(false);
     }
   };
 
@@ -415,6 +454,69 @@ export function SettingsPage({
         <p className="px-1 pt-6 pb-2 text-[12px] font-semibold text-ink-soft">
           账号
         </p>
+        {!pwOpen ? (
+          <button
+            type="button"
+            onClick={() => {
+              setPwOpen(true);
+              setPwDone(null);
+            }}
+            className="mb-2 flex w-full items-center justify-between rounded-xl bg-card px-4 py-3 text-[15px] font-semibold ring-1 ring-black/[0.04] transition-transform active:scale-[0.98]"
+          >
+            <span className="flex items-center gap-2">
+              <KeyRound size={16} strokeWidth={2.5} className="text-ink-soft" />
+              修改密码
+            </span>
+            <span className="text-[12px] font-normal text-ink-soft">
+              {pwDone ?? ""}
+            </span>
+          </button>
+        ) : (
+          <div className="mb-2 space-y-2 rounded-xl bg-card p-4 ring-1 ring-black/[0.04]">
+            {(
+              [
+                ["当前密码", pwOld, setPwOld],
+                ["新密码", pwNew, setPwNew],
+                ["再输一遍", pwAgain, setPwAgain],
+              ] as const
+            ).map(([label, value, set]) => (
+              <label key={label} className="flex items-center justify-between">
+                <span className="text-[13px] text-ink-soft">{label}</span>
+                <input
+                  type="password"
+                  autoComplete={
+                    label === "当前密码" ? "current-password" : "new-password"
+                  }
+                  value={value}
+                  onChange={(e) => set(e.target.value)}
+                  className="w-40 bg-transparent text-right text-[16px] font-semibold outline-none"
+                />
+              </label>
+            ))}
+            <p className="pt-1 text-[11px] leading-relaxed text-ink-soft/80">
+              新密码至少 6 位。改完其他设备会被退出登录,这台不用重新登录。
+            </p>
+            {pwError && <p className="text-[12px] text-burn">{pwError}</p>}
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={closePw}
+                disabled={pwBusy}
+                className="flex-1 rounded-xl bg-paper py-2.5 text-[14px] font-semibold text-ink-soft disabled:opacity-40"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={doChangePassword}
+                disabled={!pwValid || pwBusy}
+                className="flex-1 rounded-xl bg-ink py-2.5 text-[14px] font-semibold text-paper disabled:opacity-25"
+              >
+                {pwBusy ? "提交中…" : "确认修改"}
+              </button>
+            </div>
+          </div>
+        )}
         <button
           type="button"
           onClick={doLogout}
